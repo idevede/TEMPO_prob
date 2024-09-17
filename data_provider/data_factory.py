@@ -1,11 +1,24 @@
 from data_provider.data_loader import Dataset_Custom, Dataset_Pred, Dataset_TSF, Dataset_ETT_hour, Dataset_ETT_minute
+from data_provider.dataset_CSDI import Dataset_ECL, Dataset_Solar, Dataset_Traffic, Dataset_Wiki, Dataset_Taxi, Dataset_Exchange
 from torch.utils.data import DataLoader
+from data_provider.dataset_pde import Dataset_PDE
+from data_provider.dataset_lagllama import Dataset_Physics
 
 data_dict = {
     'custom': Dataset_Custom,
     'tsf_data': Dataset_TSF,
     'ett_h': Dataset_ETT_hour,
     'ett_m': Dataset_ETT_minute,
+    'ecl': Dataset_ECL,
+    'solar': Dataset_Solar,
+    'traffic': Dataset_Traffic,
+    'wiki': Dataset_Wiki,
+    'taxi': Dataset_Taxi,
+    'exchange': Dataset_Exchange,
+    'pde': Dataset_PDE,
+    'phy': Dataset_Physics,
+    # 'pm25': Dataset_PM25,
+    # 'weather': Dataset_PM25, # weather3010
 }
 
 
@@ -14,7 +27,7 @@ def data_provider(args, flag, drop_last_test=True, train_all=False):
     timeenc = 0 if args.embed != 'timeF' else 1
     percent = args.percent
     max_len = args.max_len
-
+   
     if flag == 'test':
         shuffle_flag = False
         drop_last = drop_last_test
@@ -40,7 +53,7 @@ def data_provider(args, flag, drop_last_test=True, train_all=False):
     data_set = Data(
         root_path=args.root_path,
         data_path=args.data_path,
-        flag=flag,
+        split=flag,# flag=flag,
         size=[args.seq_len, args.label_len, args.pred_len],
         features=args.features,
         target=args.target,
@@ -49,7 +62,7 @@ def data_provider(args, flag, drop_last_test=True, train_all=False):
         percent=percent,
         max_len=max_len,
         train_all=train_all,
-        data_name = args.data_name
+        # data_name = args.data_name,
     )
     print(flag, len(data_set))
     data_loader = DataLoader(

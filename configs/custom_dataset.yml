@@ -1,0 +1,12 @@
+datasets:
+  Taxi:
+    root_path: /u/dcao1/workspace/Generative-TS-train_all/csdi_data/taxi_30min/
+    data_path: train
+    data_name: Taxi
+    data: taxi
+    lradj: type4
+    features: M
+    target: '400001'
+    embed: timeF
+    freq: 0
+    percent: 100

@@ -288,15 +288,15 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
                 outputs = model(batch_x, itr)
             
             # encoder - decoder
-            outputs = outputs[:, -args.pred_len:, :]
+            # outputs = outputs[:, -args.pred_len:, :]
             batch_y = batch_y[:, -args.pred_len:, :].to(device)
 
-            pred = outputs.detach().cpu()
-            true = batch_y.detach().cpu()
+            # pred = outputs.detach().cpu()
+            # true = batch_y.detach().cpu()
 
-            loss = criterion(pred, true)
+            loss = criterion(batch_y, outputs)
 
-            total_loss.append(loss)
+            total_loss.append(loss.item())
     total_loss = np.average(total_loss)
     if args.model == 'PatchTST' or args.model == 'DLinear' or args.model == 'TCN' or  args.model == 'NLinear' or  args.model == 'NLinear_multi':
         model.train()

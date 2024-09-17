@@ -166,9 +166,9 @@ for ii in range(args.itr):
         if dataset_singe not in ['ETTh1', 'ETTh2', 'ILI', 'exchange']:   
             min_sample_num = min(min_sample_num, len(train_data))
         
-        # args.percent = 20
+        args.percent = 2
         vali_data, vali_loader = data_provider(args, 'val')
-        # args.percent = 100
+        args.percent = 100
 
         # train_datas.append(train_data)
         val_datas.append(vali_data)
@@ -211,6 +211,17 @@ for ii in range(args.itr):
 
         # import pdb; pdb.set_trace()
         print("Way1",len(train_data))
+        num_samples = int(len(vali_data) * 0.01)
+
+        # Ensure at least one sample is selected
+        num_samples = max(1, num_samples)
+
+        # Use random_split to split the dataset
+        subset_indices = torch.utils.data.random_split(vali_data, [num_samples, len(vali_data) - num_samples])[0]
+
+        # Create the final validation subset
+        vali_data = torch.utils.data.Subset(vali_data, subset_indices.indices)
+        print("Way1, vali_data",len(vali_data))
         
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
         vali_loader = torch.utils.data.DataLoader(vali_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
@@ -265,6 +276,18 @@ for ii in range(args.itr):
             def forward(self, pred, true):
                 return torch.mean(200 * torch.abs(pred - true) / (torch.abs(pred) + torch.abs(true) + 1e-8))
         criterion = SMAPE()
+    elif args.loss_func == 'prob':
+        import torch.distributions as dist
+
+        def criterion(y_true, y_pred):
+            # import pdb; pdb.set_trace()
+            y_true = y_true.squeeze()
+            mu, sigma, nu = y_pred[0], y_pred[1], y_pred[2]
+            # Create the Student's t-distribution
+            student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
+            # Calculate the negative log-likelihood
+            nll = -student_t.log_prob(y_true)
+            return nll.mean()
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
 
@@ -296,10 +319,11 @@ for ii in range(args.itr):
                 outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
             else:
                 outputs = model(batch_x, ii)
-            outputs = outputs[:, -args.pred_len:, :]
-            batch_y = batch_y[:, -args.pred_len:, :].to(device)
-            loss = criterion(outputs, batch_y) 
-            if args.model == 'GPT4TS_multi' or args.model == 'TEMPO_t5':
+            # outputs = outputs[:, -args.pred_len:, :]
+            batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
+
+            loss = criterion(batch_y, outputs) 
+            if args.model == 'GPT4TS_multi' or args.model == 'TEMPO':
                 if not args.no_stl_loss:
                     loss += args.stl_weight*loss_local
             train_loss.append(loss.item())
@@ -313,6 +337,7 @@ for ii in range(args.itr):
                 time_now = time.time()
             loss.backward()
             model_optim.step()
+            # break
         
         
         print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
@@ -334,151 +359,15 @@ for ii in range(args.itr):
             break
     
 
-    best_model_path = path + '/' + 'checkpoint.pth'
-    model.load_state_dict(torch.load(best_model_path), strict=False)
-    print("------------------------------------")
-    mse, mae = test(model, test_data, test_loader, args, device, ii)
-    torch.cuda.empty_cache()
-    print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))
+#     best_model_path = path + '/' + 'checkpoint.pth'
+#     model.load_state_dict(torch.load(best_model_path), strict=False)
+#     print("------------------------------------")
+#     mse, mae = test(model, test_data, test_loader, args, device, ii)
+#     torch.cuda.empty_cache()
+#     print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))
     
-    mses.append(mse)
-    maes.append(mae)
-print("mse_mean = {:.4f}, mse_std = {:.4f}".format(np.mean(mses), np.std(mses)))
-print("mae_mean = {:.4f}, mae_std = {:.4f}".format(np.mean(maes), np.std(maes)))
-
-#     mses_s.append(mse_s)
-#     maes_s.append(mae_s)
-#     mses_t.append(mse_t)
-#     maes_t.append(mae_t)
-#     mses_f.append(mse_f)
-#     maes_f.append(mae_f)
-#     mses_5.append(mse_5)
-#     maes_5.append(mae_5)
-#     mses_6.append(mse_6)
-#     maes_6.append(mae_6)
-#     mses_7.append(mse_7)
-#     maes_7.append(mae_7)
-    
-
-
-# mses = np.array(mses)
-# maes = np.array(maes)
-# mses_s = np.array(mses_s)
-# maes_s = np.array(maes_s)
-# mses_t = np.array(mses_t)
-# maes_t = np.array(maes_t)
-# mses_f = np.array(mses_f)
-# maes_f = np.array(maes_f)
-# mses_5 = np.array(mses_5)
-# maes_5 = np.array(maes_5)
-# mses_6 = np.array(mses_6)
-# maes_6 = np.array(maes_6)
-# mses_7 = np.array(mses_7)
-# maes_7 = np.array(maes_7)
-# # names = #['weather', 'weather_s', 'weather_t', 'weather_f', 'weather_5', 'ettm2', 'traffic']
-# # names = [args.data_name, args.data_name_s, args.data_name_t, args.data_name_f, args.data_name_5, args.data_name_6, args.data_name_7]
-
+#     mses.append(mse)
+#     maes.append(mae)
 # print("mse_mean = {:.4f}, mse_std = {:.4f}".format(np.mean(mses), np.std(mses)))
 # print("mae_mean = {:.4f}, mae_std = {:.4f}".format(np.mean(maes), np.std(maes)))
-# print("mse_s_mean = {:.4f}, mse_s_std = {:.4f}".format(np.mean(mses_s), np.std(mses_s)))
-# print("mae_s_mean = {:.4f}, mae_s_std = {:.4f}".format(np.mean(maes_s), np.std(maes_s)))
-# print("mse_t_mean = {:.4f}, mse_t_std = {:.4f}".format(np.mean(mses_t), np.std(mses_t)))
-# print("mae_t_mean = {:.4f}, mae_t_std = {:.4f}".format(np.mean(maes_t), np.std(maes_t)))
-# print("mse_f_mean = {:.4f}, mse_f_std = {:.4f}".format(np.mean(mses_f), np.std(mses_f)))
-# print("mae_f_mean = {:.4f}, mae_f_std = {:.4f}".format(np.mean(maes_f), np.std(maes_f)))
-# print("mse_5_mean = {:.4f}, mse_5_std = {:.4f}".format(np.mean(mses_5), np.std(mses_5)))
-# print("mae_5_mean = {:.4f}, mae_5_std = {:.4f}".format(np.mean(maes_5), np.std(maes_5)))
-# print("mse_6_mean = {:.4f}, mse_6_std = {:.4f}".format(np.mean(mses_6), np.std(mses_6)))
-# print("mae_6_mean = {:.4f}, mae_6_std = {:.4f}".format(np.mean(maes_6), np.std(maes_6)))
-# print("mse_7_mean = {:.4f}, mse_7_std = {:.4f}".format(np.mean(mses_7), np.std(mses_7)))
-# print("mae_7_mean = {:.4f}, mae_7_std = {:.4f}".format(np.mean(maes_7), np.std(maes_7)))
 
-# import pandas as pd
-# import numpy as np
-
-# # # Create a DataFrame
-# # data = {
-# #     'Metric': ['MSE', 'MAE'] * 7,
-# #     'Mean': [
-# #         np.mean(mses), np.mean(maes),
-# #         np.mean(mses_s), np.mean(maes_s),
-# #         np.mean(mses_t), np.mean(maes_t),
-# #         np.mean(mses_f), np.mean(maes_f),
-# #         np.mean(mses_5), np.mean(maes_5),
-# #         np.mean(mses_6), np.mean(maes_6),
-# #         np.mean(mses_7), np.mean(maes_7)
-# #     ],
-# #     'Standard Deviation': [
-# #         np.std(mses), np.std(maes),
-# #         np.std(mses_s), np.std(maes_s),
-# #         np.std(mses_t), np.std(maes_t),
-# #         np.std(mses_f), np.std(maes_f),
-# #         np.std(mses_5), np.std(maes_5),
-# #         np.std(mses_6), np.std(maes_6),
-# #         np.std(mses_7), np.std(maes_7)
-# #     ],
-# #     'Model': ['weather', 'weather', 'weather_s', 'weather_s', 'weather_t', 'weather_t',
-# #               'weather_f', 'weather_f', 'weather_5', 'weather_5', 'ettm2', 'ettm2', 'traffic', 'traffic']
-# # }
-
-# # df = pd.DataFrame(data)
-
-# # # Group by the 'Model' column to make the LaTeX table clearer
-# # grouped = df.groupby('Model')
-
-# # # Output the DataFrame to a LaTeX table
-# # latex_table = grouped.apply(lambda x: x[['Metric', 'Mean', 'Standard Deviation']].to_latex(index=False, float_format="%.4f"))
-
-# # # Print the LaTeX table
-# # print(latex_table)
-
-
-# # LaTeX table header
-# latex_table = """
-# \\begin{table}[ht]
-# \\centering
-# \\begin{tabular}{lrr}
-# \\toprule
-# Model & MSE (Mean ± Std) & MAE (Mean ± Std) \\\\
-# \\midrule
-# """
-
-# # Collecting data and creating table rows
-# metrics = [(mses, maes), (mses_s, maes_s), (mses_t, maes_t), (mses_f, maes_f), (mses_5, maes_5), (mses_6, maes_6), (mses_7, maes_7)]
-# for name, (mse_values, mae_values) in zip(names, metrics):
-#     mse_mean = np.mean(mse_values)
-#     mse_std = np.std(mse_values)
-#     mae_mean = np.mean(mae_values)
-#     mae_std = np.std(mae_values)
-#     latex_table += "{} & {:.4f} ± {:.4f} & {:.4f} ± {:.4f} \\\\\n".format(name, mse_mean, mse_std, mae_mean, mae_std)
-
-# # LaTeX table footer
-# latex_table += """
-# \\bottomrule
-# \\end{tabular}
-# \\caption{Summary of model performance.}
-# \\label{tab:model_performance}
-# \\end{table}
-# """
-
-# print(latex_table)
-
-
-# # Create a DataFrame for the data
-# data = {
-#     'Model': names,
-#     'MSE Mean': [np.mean(mses), np.mean(mses_s), np.mean(mses_t), np.mean(mses_f), np.mean(mses_5), np.mean(mses_6), np.mean(mses_7)],
-#     'MSE Std': [np.std(mses), np.std(mses_s), np.std(mses_t), np.std(mses_f), np.std(mses_5), np.std(mses_6), np.std(mses_7)],
-#     'MAE Mean': [np.mean(maes), np.mean(maes_s), np.mean(maes_t), np.mean(maes_f), np.mean(maes_5), np.mean(maes_6), np.mean(maes_7)],
-#     'MAE Std': [np.std(maes), np.std(maes_s), np.std(maes_t), np.std(maes_f), np.std(maes_5), np.std(maes_6), np.std(maes_7)]
-# }
-
-# df = pd.DataFrame(data)
-
-# print(df)
-# # Write the DataFrame to an Excel file
-# excel_file_path = os.path.join(args.checkpoints, args.model_id + '.xlsx')
-# with pd.ExcelWriter(excel_file_path, engine='xlsxwriter') as writer:
-#     df.to_excel(writer, index=False, sheet_name='Performance')
-
-# print(f"Data has been written to {excel_file_path}")

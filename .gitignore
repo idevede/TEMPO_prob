@@ -13,6 +13,7 @@ test_results/*
 */runs
 */results
 stl/
+stl/*
 stl*/
 *checkpoints*/
 *dataset*/
@@ -31,4 +32,5 @@ __MACOSX
 *.pk
 logs/*
 lora_revin_*
+*.out
 

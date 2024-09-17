@@ -12,7 +12,7 @@
 # 
 # export CUDA_VISIBLE_DEVICES=2
 
-seq_len=336
+seq_len=168
 model=TEMPO #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1
@@ -20,7 +20,7 @@ traffic_multiplier=1
 
 for percent in 100 
 do
-for pred_len in  96 192 336 720 
+for pred_len in  24 #96 192 336 720 
 do
 for tmax in 20
 do
@@ -40,7 +40,7 @@ echo logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equ
 
 
 python main_multi_6domain_release.py \
-    --datasets ETTm1,ETTh2,ETTm2,electricity,traffic,weather \
+    --datasets ETTh1,ETTm1,ETTh2,ETTm2,electricity,traffic,weather \
     --target_data ETTh1 \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \

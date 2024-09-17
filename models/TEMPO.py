@@ -11,7 +11,7 @@ from transformers.models.gpt2.configuration_gpt2 import GPT2Config
 from transformers import GPT2LMHeadModel, GPT2Tokenizer
 from utils.rev_in import RevIn
 from peft import get_peft_config, PeftModel, PeftConfig, get_peft_model, LoraConfig, TaskType
-
+import torch.nn.functional as F
 
 criterion = nn.MSELoss()
 
@@ -193,6 +193,13 @@ class TEMPO(nn.Module):
             self.out_layer_trend = nn.Linear(configs.d_model * self.patch_num, configs.pred_len)
             self.out_layer_season = nn.Linear(configs.d_model * self.patch_num, configs.pred_len)
             self.out_layer_noise = nn.Linear(configs.d_model * self.patch_num, configs.pred_len)
+
+        # Prob
+
+        # Output layers for Student's t-distribution parameters
+        self.mu = nn.Linear(configs.pred_len, configs.pred_len)  # Mean
+        self.sigma = nn.Linear(configs.pred_len, configs.pred_len)  # Scale (standard deviation)
+        self.nu = nn.Linear(configs.pred_len, configs.pred_len)  # Degrees of freedom
 
 
         
@@ -387,11 +394,12 @@ class TEMPO(nn.Module):
         noise_local = x - trend_local - season_local
 
         
-        trend, means_trend, stdev_trend = self.get_norm(trend)
-        season, means_season, stdev_season = self.get_norm(season)
-        noise, means_noise, stdev_noise = self.get_norm(noise)
+        
 
         if trend is not None:
+            trend, means_trend, stdev_trend = self.get_norm(trend)
+            season, means_season, stdev_season = self.get_norm(season)
+            noise, means_noise, stdev_noise = self.get_norm(noise)
             trend_local_l = criterion(trend, trend_local)
             season_local_l = criterion(season, season_local)
             noise_local_l = criterion(noise, noise_local)
@@ -402,6 +410,8 @@ class TEMPO(nn.Module):
                 print("trend local loss:", torch.mean(trend_local_l))
                 print("Season local loss", torch.mean(season_local_l))
                 print("noise local loss", torch.mean(noise_local_l))
+        else:
+            loss_local = None
 
 
         trend = self.get_patch(trend_local)
@@ -476,6 +486,13 @@ class TEMPO(nn.Module):
 
         # outputs = outputs * stdev + means
         outputs = self.rev_in_trend(outputs, 'denorm')
+
+        outputs = rearrange(outputs, 'b l m-> b m l', b=B).squeeze()
+        mu = self.mu(outputs)
+        sigma = F.softplus(self.sigma(outputs)) + 1e-6  # Ensure scale is positive
+        nu = F.softplus(self.nu(outputs)) + 2   # Ensure degrees of freedom > 2
+
+
         # if self.pool:
         #     return outputs, loss_local #loss_local - reduce_sim_trend - reduce_sim_season - reduce_sim_noise
-        return outputs, loss_local
+        return (mu, sigma, nu), loss_local

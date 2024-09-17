@@ -17,7 +17,7 @@ warnings.filterwarnings('ignore')
 stl_position = 'stl/'
 
 class Dataset_ETT_hour(Dataset):
-    def __init__(self, root_path, flag='train', size=None,
+    def __init__(self, root_path, split='train', size=None,
                  features='S', data_path='ETTh1.csv',
                  target='OT', scale=True, timeenc=0, freq='h', 
                  percent=100, data_name = 'etth2', max_len=-1, train_all=False):
@@ -32,9 +32,9 @@ class Dataset_ETT_hour(Dataset):
             self.label_len = size[1]
             self.pred_len = size[2]
         # init
-        assert flag in ['train', 'test', 'val']
+        assert split in ['train', 'test', 'val']
         type_map = {'train': 0, 'val': 1, 'test': 2}
-        self.set_type = type_map[flag]
+        self.set_type = type_map[split]
 
         self.percent = percent
         self.features = features
@@ -188,7 +188,7 @@ class Dataset_ETT_hour(Dataset):
         return self.scaler.inverse_transform(data)
 
 class Dataset_ETT_minute(Dataset):
-    def __init__(self, root_path, flag='train', size=None,
+    def __init__(self, root_path, split='train', size=None,
                  features='S', data_path='ETTm1.csv',
                  target='OT', scale=True, timeenc=0, freq='t', 
                  percent=100, max_len=-1, data_name = 'ettm2', train_all=False):
@@ -203,9 +203,9 @@ class Dataset_ETT_minute(Dataset):
             self.label_len = size[1]
             self.pred_len = size[2]
         # init
-        assert flag in ['train', 'test', 'val']
+        assert split in ['train', 'test', 'val']
         type_map = {'train': 0, 'val': 1, 'test': 2}
-        self.set_type = type_map[flag]
+        self.set_type = type_map[split]
 
         self.features = features
         self.target = target
@@ -356,7 +356,7 @@ class Dataset_ETT_minute(Dataset):
         return self.scaler.inverse_transform(data)
 
 class Dataset_Custom(Dataset):
-    def __init__(self, root_path, flag='train', size=None,
+    def __init__(self, root_path, split='train', size=None,
                  features='S', data_path='ETTh1.csv',
                  target='OT', scale=True, timeenc=0, freq='h',
                  percent=10, data_name = 'weather', max_len=-1, train_all=False):
@@ -371,9 +371,9 @@ class Dataset_Custom(Dataset):
             self.label_len = size[1]
             self.pred_len = size[2]
         # init
-        assert flag in ['train', 'test', 'val']
+        assert split in ['train', 'test', 'val']
         type_map = {'train': 0, 'val': 1, 'test': 2}
-        self.set_type = type_map[flag]
+        self.set_type = type_map[split]
 
         self.features = features
         self.target = target
@@ -547,7 +547,7 @@ class Dataset_Custom(Dataset):
     
 
 class Dataset_Pred(Dataset):
-    def __init__(self, root_path, flag='pred', size=None,
+    def __init__(self, root_path, split='pred', size=None,
                  features='S', data_path='ETTh1.csv',
                  target='OT', scale=True, inverse=False, timeenc=0, freq='15min', cols=None,
                  percent=None, train_all=False, period = 24, max_len=-1, data_name = 'weather'):
@@ -562,7 +562,7 @@ class Dataset_Pred(Dataset):
             self.label_len = size[1]
             self.pred_len = size[2]
         # init
-        assert flag in ['pred']
+        assert split in ['pred']
 
         self.features = features
         self.target = target
@@ -729,7 +729,7 @@ class Dataset_Pred(Dataset):
 
 
 class Dataset_TSF(Dataset):
-    def __init__(self, root_path, flag='train', size=None,
+    def __init__(self, root_path, split='train', size=None,
                  features='S', data_path=None,
                  target='OT', scale=True, timeenc=0, freq='Daily',
                  percent=10, max_len=-1, train_all=False):
@@ -739,7 +739,7 @@ class Dataset_TSF(Dataset):
         self.seq_len = size[0]
         self.pred_len = size[2]
         type_map = {'train': 0, 'val': 1, 'test': 2}
-        self.set_type = type_map[flag]
+        self.set_type = type_map[split]
         
         self.percent = percent
         self.max_len = max_len
