@@ -33,4 +33,5 @@ __MACOSX
 logs/*
 lora_revin_*
 *.out
+*.log
 

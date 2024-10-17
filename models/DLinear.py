@@ -69,6 +69,14 @@ class DLinear(nn.Module):
             # self.Linear_Seasonal.weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
             # self.Linear_Trend.weight = nn.Parameter((1/self.seq_len)*torch.ones([self.pred_len,self.seq_len]))
 
+        # Output layers for Student's t-distribution parameters
+        self.mu = nn.Linear(configs.pred_len, configs.pred_len)  # Mean
+        self.sigma = nn.Linear(configs.pred_len, configs.pred_len)  # Scale (standard deviation)
+        self.nu = nn.Linear(configs.pred_len, configs.pred_len)  # Degrees of freedom
+
+
+
+
     def forward(self, x, itr):
         # x: [Batch, Input length, Channel]
         seasonal_init, trend_init = self.decompsition(x)
@@ -84,4 +92,13 @@ class DLinear(nn.Module):
             trend_output = self.Linear_Trend(trend_init)
 
         x = seasonal_output + trend_output
-        return x.permute(0,2,1) # to [Batch, Output length, Channel]
+
+        mu = self.mu(x)
+        sigma = F.softplus(self.sigma(x)) + 1e-6  # Ensure scale is positive
+        nu = F.softplus(self.nu(x)) + 2   # Ensure degrees of freedom > 2
+
+
+        # if self.pool:
+        #     return outputs, loss_local #loss_local - reduce_sim_trend - reduce_sim_season - reduce_sim_noise
+        return (mu, sigma, nu)
+        # return x.permute(0,2,1) # to [Batch, Output length, Channel]

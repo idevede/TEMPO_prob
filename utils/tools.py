@@ -7,6 +7,8 @@ from tqdm import tqdm
 from datetime import datetime
 from distutils.util import strtobool
 import pandas as pd
+import torch.distributions as dist
+from utils.imputation_metrics import mse_withmask, mae_withmask, calc_quantile_CRPS, calc_quantile_CRPS_sum
 
 from utils.metrics import metric
 
@@ -267,18 +269,20 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
         
     with torch.no_grad():
         for i, data in tqdm(enumerate(vali_loader)):
-            batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            # batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
             batch_x = batch_x.float().to(device)
             batch_y = batch_y.float()
 
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
 
-            seq_trend = seq_trend.float().to(device)
-            seq_seasonal = seq_seasonal.float().to(device)
-            seq_resid = seq_resid.float().to(device)
+            
 
             if args.model == 'GPT4TS_multi' or args.model == 'NLinear_multi' or 'TEMPO' in args.model:
+                seq_trend = seq_trend.float().to(device)
+                seq_seasonal = seq_seasonal.float().to(device)
+                seq_resid = seq_resid.float().to(device)
                 outputs, _ = model(batch_x, itr,  seq_trend, seq_seasonal, seq_resid)
             elif 'former' in args.model or args.model == 'FEDformer' or args.model == 'TimesNet' or args.model == 'LightTS':
                 dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
@@ -323,6 +327,40 @@ def metric_mae_mse(preds, trues):
     mae = np.abs(preds - trues).mean()
     return mae, mse
 
+def plot_results(synthetic_data, target_mask, gt_data, seq_len, 
+                 low_q, mid_q, high_q, path = '', pred_len=24):
+    i = 0 #3000
+    feat_dim = synthetic_data.shape[2]
+    if feat_dim>10:
+        feat_dim = 10
+    synthetic_data = synthetic_data[:,:,:gt_data.shape[1],:seq_len]
+    # import pdb; pdb.set_trace()
+    target_mask = target_mask[:,:gt_data.shape[1],:seq_len]
+    gt_data = gt_data[:,:,:seq_len]
+
+    fig, axes = plt.subplots(nrows=feat_dim, ncols=1, figsize=(10, 20))
+    for feat_idx in range(feat_dim):
+        # import pdb; pdb.set_trace()
+        # df_x = pd.DataFrame({"x": np.arange(0, seq_len), "val": gt_data[i, feat_idx, :],
+        #                     "y": (1-target_mask)[i, feat_idx, :]})
+        # df_x = df_x[df_x.y!=0]
+
+        df_o = pd.DataFrame({"x": np.arange(0, seq_len), "val": gt_data[i, feat_idx, :],
+                            "y": target_mask[i, feat_idx, :]})
+        # df_o = df_o[df_o.y!=0]
+        axes[feat_idx].plot(df_o.x, df_o.val, color='b',  linestyle='solid', label='label')
+        # axes[feat_idx].plot(df_x.x, df_x.val, color='r', marker='x', linestyle='None')
+        axes[feat_idx].plot(range(seq_len-pred_len, seq_len), mid_q[i, feat_idx, -pred_len:], color='g', linestyle='solid', label='Diffusion-TS')
+        axes[feat_idx].fill_between(range(seq_len-pred_len, seq_len), low_q[i, feat_idx,-pred_len:],high_q[i,feat_idx, -pred_len:], color='g', alpha = 0.3)
+        plt.setp(axes[feat_idx], ylabel='value')
+        if feat_idx == feat_dim-1:
+            plt.setp(axes[-1], xlabel='time')
+        # axes[feat_idx].set_ylim(-3, 3)
+    plt.legend()
+    plt.savefig(path)
+    # plt.show()
+    plt.close()
+
 def test(model, test_data, test_loader, args, device, itr):
     preds = []
     trues = []
@@ -333,11 +371,18 @@ def test(model, test_data, test_loader, args, device, itr):
     total_mse = 0
     n_samples = 0
 
+    preds = []
+    trues = []
+    masks = []
+    means = []
+    stds = []
+
     model.eval()
     with torch.no_grad():
         for i, data in tqdm(enumerate(test_loader), total=len(test_loader)):
             
-            batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            #batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3] #, data[4], data[5], data[6]
             
             # outputs_np = batch_x.cpu().numpy()
             # np.save("emb_test/ETTh2_192_test_input_itr{}_{}.npy".format(itr, i), outputs_np)
@@ -345,62 +390,120 @@ def test(model, test_data, test_loader, args, device, itr):
             # np.save("emb_test/ETTh2_192_test_true_itr{}_{}.npy".format(itr, i), outputs_np)
 
             batch_x = batch_x.float().to(device)
-            seq_trend = seq_trend.float().to(device)
-            seq_seasonal = seq_seasonal.float().to(device)
-            seq_resid = seq_resid.float().to(device)
+            
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
+            if 'M5' in args.target_data:
+                mean, std = data[3], data[4]
+                means.append(mean)
+                stds.append(std)
+
 
             
             batch_y = batch_y.float()
-            if args.model == 'TEMPO' or args.model == 'TEMPO_t5' or 'multi' in args.model:
-                outputs, _ = model(batch_x[:, -args.seq_len:, :], itr,  seq_trend[:, -args.seq_len:, :], seq_seasonal[:, -args.seq_len:, :], seq_resid[:, -args.seq_len:, :])
-            elif 'former' in args.model or args.model == 'FEDformer' or args.model == 'TimesNet' or args.model == 'LightTS':
-                dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
-                outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-            else:
-                outputs = model(batch_x[:, -args.seq_len:, :], itr)
-            
-            # outputs = model(batch_x[:, -args.seq_len:, :], itr)
-            
-            # encoder - decoder
-            outputs = outputs[:, -args.pred_len:, :]
-            batch_y = batch_y[:, -args.pred_len:, :].to(device)
 
-            pred = outputs.detach().cpu().numpy().astype(np.float16)
-            true = batch_y.detach().cpu().numpy().astype(np.float16)
-            torch.cuda.empty_cache()
-
-            # Calculate the batch errors
-            batch_mae, batch_mse = metric_mae_mse(pred, true)
+            # import pdb; pdb.set_trace()
+            for channel in range(batch_x.shape[-1]):
+                if args.model == 'TEMPO' or args.model == 'TEMPO_t5' or 'multi' in args.model:
+                    seq_trend = seq_trend.float().to(device)
+                    seq_seasonal = seq_seasonal.float().to(device)
+                    seq_resid = seq_resid.float().to(device)
+                    outputs, _ = model(batch_x[:, -args.seq_len:, channel:channel+1], itr,  seq_trend[:, -args.seq_len:, :], seq_seasonal[:, -args.seq_len:, :], seq_resid[:, -args.seq_len:, :])
+                elif 'former' in args.model or args.model == 'FEDformer' or args.model == 'TimesNet' or args.model == 'LightTS':
+                    dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
+                    outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    outputs = model(batch_x[:, -args.seq_len:,  channel:channel+1], itr)
             
-            # Update the total errors
-            total_mae += batch_mae * batch_x.size(0)  # Assuming batch_x.size(0) is the batch size
-            total_mse += batch_mse * batch_x.size(0)
-            n_samples += batch_x.size(0)
+                # outputs = model(batch_x[:, -args.seq_len:, :], itr)
+                mu, sigma, nu = outputs[0], outputs[1], outputs[2]
+                # Create the Student's t-distribution with the predicted parameters
+                student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
+
+                # Generate 30 samples for each prediction
+                num_samples = 35
+                probabilistic_forecasts = student_t.rsample((num_samples,))
+
+                # The shape of probabilistic_forecasts will be (num_samples, batch_size, pred_length)
+                # print(probabilistic_forecasts.shape)
+                preds.append(probabilistic_forecasts.cpu().numpy())
+                trues.append(batch_y[:,:, channel:channel+1].cpu().numpy())
+                masks.append(batch_x_mark[:,:, channel:channel+1].cpu().numpy())
+
+            
+            # # # encoder - decoder
+            # # outputs = outputs[:, -args.pred_len:, :]
+            # batch_y = batch_y[:, -args.pred_len:, :].to(device)
+
+            # pred = outputs.detach().cpu().numpy().astype(np.float16)
+            # true = batch_y.detach().cpu().numpy().astype(np.float16)
+            # torch.cuda.empty_cache()
+
+            # # Calculate the batch errors
+            # batch_mae, batch_mse = metric_mae_mse(pred, true)
+            
+            # # Update the total errors
+            # total_mae += batch_mae * batch_x.size(0)  # Assuming batch_x.size(0) is the batch size
+            # total_mse += batch_mse * batch_x.size(0)
+            # n_samples += batch_x.size(0)
 
             torch.cuda.empty_cache()
             
             # preds.append(pred)
             # trues.append(true)
+    trues = np.array(trues)
+    preds = np.array(preds)
+    masks = np.array(masks)
+    trues= np.swapaxes(trues.squeeze(), -2, -3)
+    unormzalized_gt_data= np.swapaxes(trues.squeeze(), -1, -2)
+    masks= np.swapaxes(masks.squeeze(), -2, -3)
+    target_mask= np.swapaxes(masks.squeeze(), -1, -2)
+    preds= np.transpose(preds.squeeze(), (2, 1, 3, 0))
 
-    # Calculate the average errors
-    mae = total_mae / n_samples
-    mse = total_mse / n_samples
+    if 'M5' in args.target_data:
+        all_means = np.concatenate(means,0)
+        all_stds = np.concatenate(stds,0)
+        all_means =  np.expand_dims(all_means, axis=1) 
+        all_stds =  np.expand_dims(all_stds, axis=1)
+        unormzalized_gt_data = unormzalized_gt_data * all_stds + all_means
+        # import pdb; pdb.set_trace()
+        all_means =  np.expand_dims(all_means, axis=1) 
+        all_stds =  np.expand_dims(all_stds, axis=1)
+        preds = preds * all_stds + all_means
 
-    print(f'Average MAE: {mae}')
-    print(f'Average MSE: {mse}')
-    # preds = np.array(preds)
-    # trues = np.array(trues)
-    # # mases = np.mean(np.array(mases))
-    # print('test shape:', preds.shape, trues.shape)
-    # preds = preds.reshape(-1, preds.shape[-2], preds.shape[-1])
-    # trues = trues.reshape(-1, trues.shape[-2], trues.shape[-1])
-    # print('test shape:', preds.shape, trues.shape)
 
-    # mae, mse, rmse, mape, mspe, smape, nd = metric(preds, trues)
-    # # print('mae:{:.4f}, mse:{:.4f}, rmse:{:.4f}, smape:{:.4f}, mases:{:.4f}'.format(mae, mse, rmse, smape, mases))
-    # print('mae:{:.4f}, mse:{:.4f}, rmse:{:.4f}, smape:{:.4f}'.format(mae, mse, rmse, smape))
+    low_q = np.quantile(preds,0.05,axis=1)
+    high_q = np.quantile(preds,0.95,axis=1)
+    mid_q = np.quantile(preds,0.5,axis=1)
 
-    return mse, mae
+    unormalized_synthetic_data = preds
+
+    print('MAE:', mae_withmask(torch.Tensor(unormzalized_gt_data),torch.Tensor(mid_q),torch.Tensor(target_mask)))
+
+    print('MSE:', mse_withmask(torch.Tensor(unormzalized_gt_data),torch.Tensor(mid_q),torch.Tensor(target_mask)))
+
+    unormzalized_gt_data = np.swapaxes(unormzalized_gt_data, -1, -2)
+    unormalized_synthetic_data = np.swapaxes(unormalized_synthetic_data, -1, -2)
+    target_mask = np.swapaxes(target_mask, -1, -2)
+    # import pdb; pdb.set_trace()
+
+    low_q = np.quantile(unormalized_synthetic_data,0.05,axis=1)
+    high_q = np.quantile(unormalized_synthetic_data,0.95,axis=1)
+    mid_q = np.quantile(unormalized_synthetic_data,0.5,axis=1)
+
+    # plot_results(unormalized_synthetic_data, target_mask, unormzalized_gt_data, 30, low_q, mid_q, high_q, 
+    #              path =  './forecasting_examine_together.png', pred_len = 30)
+    
+
+    unormzalized_gt_data = np.swapaxes(unormzalized_gt_data, -1, -2)
+    unormalized_synthetic_data = np.swapaxes(unormalized_synthetic_data, -1, -2)
+    target_mask = np.swapaxes(target_mask, -1, -2)
+
+    print('CRPS_Sum:', calc_quantile_CRPS_sum(torch.Tensor(unormzalized_gt_data),torch.Tensor(unormalized_synthetic_data),torch.Tensor(target_mask),mean_scaler=0,scaler=1))
+
+    print('CRPS:', calc_quantile_CRPS(torch.Tensor(unormzalized_gt_data),torch.Tensor(unormalized_synthetic_data),torch.Tensor(target_mask),mean_scaler=0,scaler=1))
+   
+    # import pdb; pdb.set_trace()
+    
+    return preds, trues #mse, mae

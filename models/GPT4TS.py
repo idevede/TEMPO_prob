@@ -10,7 +10,7 @@ from embed import DataEmbedding, DataEmbedding_wo_time
 from transformers.models.gpt2.configuration_gpt2 import GPT2Config
 from utils.rev_in import RevIn
 from peft import get_peft_config, PeftModel, PeftConfig, get_peft_model, LoraConfig, TaskType
-
+import torch.nn.functional as F
 
 class GPT4TS(nn.Module):
     
@@ -78,6 +78,12 @@ class GPT4TS(nn.Module):
         self.num_nodes = 1
         self.rev_in = RevIn(num_features=self.num_nodes).to(device)
 
+        # Output layers for Student's t-distribution parameters
+        self.mu = nn.Linear(configs.pred_len, configs.pred_len).to(device=device)  # Mean
+        self.sigma = nn.Linear(configs.pred_len, configs.pred_len).to(device=device)  # Scale (standard deviation)
+        self.nu = nn.Linear(configs.pred_len, configs.pred_len).to(device=device)  # Degrees of freedom
+    
+
 
     def forward(self, x, itr):
         B, L, M = x.shape # 4, 512, 1
@@ -103,4 +109,15 @@ class GPT4TS(nn.Module):
         outputs = outputs * stdev
         outputs = outputs + means
 
-        return outputs
+        x = outputs.permute(0, 2, 1) # [B, L, D] -> [B, D, L]
+        # import pdb; pdb.set_trace()
+        mu = self.mu(x)
+        sigma = F.softplus(self.sigma(x)) + 1e-6  # Ensure scale is positive
+        nu = F.softplus(self.nu(x)) + 2   # Ensure degrees of freedom > 2
+
+
+        # if self.pool:
+        #     return outputs, loss_local #loss_local - reduce_sim_trend - reduce_sim_season - reduce_sim_noise
+        return (mu, sigma, nu)
+
+        # return outputs

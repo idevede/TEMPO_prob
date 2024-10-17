@@ -98,3 +98,160 @@ datasets:
     embed: timeF
     freq: 0
     percent: 100
+  aq:
+    root_path: ./data_CSDI_miss/
+    data_path: aq/AirQualityUCI_no_missing.csv
+    txt_path:  aq/AirQualityUCI_mask.csv
+    data_name: aq
+    data: aq
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  nasdaq:
+    root_path: ./data_CSDI_miss/
+    data_path: nasdaq_top10.csv
+    txt_path:  nasdaq_top10.csv
+    data_name: nasdaq
+    data: nasdaq
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  mimic:
+    root_path: ./data_CSDI_miss/
+    data_path: lab.csv
+    txt_path:  lab.csv
+    data_name: mimic
+    data: mimic
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  physionet:
+    root_path: ./data_CSDI_miss/
+    data_path: set-c_icu
+    txt_path:  set-c_icu
+    data_name: physionet
+    data: physionet
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_CA_FOODS:
+    root_path: ./data_CSDI_miss/data
+    data_path: FOODS_CA
+    txt_path:  FOODS_CA
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_CA_HOBBIES:
+    root_path: ./data_CSDI_miss/data
+    data_path: HOBBIES_CA
+    txt_path:  HOBBIES_CA
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_CA_HOUSEHOLD:
+    root_path: ./data_CSDI_miss/data
+    data_path: HOUSEHOLD_CA
+    txt_path:  HOUSEHOLD_CA
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_TX_FOODS:
+    root_path: ./data_CSDI_miss/data
+    data_path: FOODS_TX
+    txt_path:  FOODS_TX
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_TX_HOBBIES:
+    root_path: ./data_CSDI_miss/data
+    data_path: HOBBIES_TX
+    txt_path:  HOBBIES_TX
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_TX_HOUSEHOLD:
+    root_path: ./data_CSDI_miss/data
+    data_path: HOUSEHOLD_TX
+    txt_path:  HOUSEHOLD_TX
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_WI_FOODS:
+    root_path: ./data_CSDI_miss/data
+    data_path: FOODS_WI
+    txt_path:  FOODS_WI
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_WI_HOBBIES: 
+    root_path: ./data_CSDI_miss/data
+    data_path: HOBBIES_WI
+    txt_path:  HOBBIES_WI
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  M5_WI_HOUSEHOLD:
+    root_path: ./data_CSDI_miss/data
+    data_path: HOUSEHOLD_WI
+    txt_path:  HOUSEHOLD_WI
+    data_name: m5
+    data: m5
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+ 

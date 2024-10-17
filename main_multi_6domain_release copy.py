@@ -8,8 +8,6 @@ from models.DLinear import DLinear
 from models.TEMPO import TEMPO
 from models.T5 import T54TS
 from models.ETSformer import ETSformer
-from models.NeuralODE import NeuralODETimeSeries
-from models.NeuralCDE import NeuralCDETimeSeries
 
 
 import numpy as np
@@ -177,36 +175,77 @@ for ii in range(args.itr):
         # train_datas.append(train_data)
         val_datas.append(vali_data)
 
-    
-    # train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    # vali_loader = torch.utils.data.DataLoader(vali_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+    for dataset_singe in args.datasets.split(','):
+        print(dataset_singe)
+        args.data = config['datasets'][dataset_singe].data
+        args.root_path = config['datasets'][dataset_singe].root_path
+        args.data_path = config['datasets'][dataset_singe].data_path
+        args.data_name = config['datasets'][dataset_singe].data_name
+        args.features = config['datasets'][dataset_singe].features
+        args.freq = config['datasets'][dataset_singe].freq
+        args.target = config['datasets'][dataset_singe].target
+        args.embed = config['datasets'][dataset_singe].embed
+        args.percent = config['datasets'][dataset_singe].percent
+        args.lradj = config['datasets'][dataset_singe].lradj
+        if args.freq == 0:
+            args.freq = 'h'
+        # if args.freq != 'h':
+        #     args.freq = SEASONALITY_MAP[test_data.freq]
+        #     print("freq = {}".format(args.freq))
+
+        print("dataset: ", args.data)
+        train_data, train_loader = data_provider(args, 'train')
+        if dataset_singe not in ['ETTh1', 'ETTh2', 'ILI', 'exchange'] and args.equal == 1: 
+            train_data = Subset(train_data, choice(len(train_data), min_sample_num))
+        if args.electri_multiplier>1 and args.equal == 1 and dataset_singe in ['electricity']: 
+            train_data = Subset(train_data, choice(len(train_data), int(min_sample_num*args.electri_multiplier)))
+        if args.traffic_multiplier>1 and args.equal == 1 and dataset_singe in ['traffic']: 
+            train_data = Subset(train_data, choice(len(train_data), int(min_sample_num*args.traffic_multiplier)))
+        train_datas.append(train_data)
+
+    if len(train_datas) > 1:
+        train_data = torch.utils.data.ConcatDataset([train_datas[0], train_datas[1]])
+        vali_data = torch.utils.data.ConcatDataset([val_datas[0], val_datas[1]])
+        for i in range(2,len(train_datas)):
+            train_data = torch.utils.data.ConcatDataset([train_data, train_datas[i]])
+            
+            vali_data = torch.utils.data.ConcatDataset([vali_data, val_datas[i]])
+
+        # import pdb; pdb.set_trace()
+        print("Way1",len(train_data))
+        num_samples = int(len(vali_data) * 0.01)
+
+        # Ensure at least one sample is selected
+        num_samples = max(1, num_samples)
+
+        # Use random_split to split the dataset
+        subset_indices = torch.utils.data.random_split(vali_data, [num_samples, len(vali_data) - num_samples])[0]
+
+        # Create the final validation subset
+        vali_data = torch.utils.data.Subset(vali_data, subset_indices.indices)
+        print("Way1, vali_data",len(vali_data))
+        
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
+        vali_loader = torch.utils.data.DataLoader(vali_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
 
 
-    args.data = config['datasets'][args.target_data].data
-    args.root_path = config['datasets'][args.target_data].root_path
-    args.data_path = config['datasets'][args.target_data].data_path
-    args.data_name = config['datasets'][args.target_data].data_name
-    args.features = config['datasets'][dataset_singe].features
-    args.freq = config['datasets'][args.target_data].freq
-    args.target = config['datasets'][args.target_data].target
-    args.embed = config['datasets'][args.target_data].embed
-    args.percent = config['datasets'][args.target_data].percent
-    args.lradj = config['datasets'][args.target_data].lradj
-    if args.freq == 0:
-        args.freq = 'h'
-    test_data, test_loader = data_provider(args, 'test')
-
-    train_data = train_data[0]
-    vali_data = vali_data[0]
-    test_data = test_data[0]
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    vali_loader = torch.utils.data.DataLoader(vali_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
+        args.data = config['datasets'][args.target_data].data
+        args.root_path = config['datasets'][args.target_data].root_path
+        args.data_path = config['datasets'][args.target_data].data_path
+        args.data_name = config['datasets'][args.target_data].data_name
+        args.features = config['datasets'][dataset_singe].features
+        args.freq = config['datasets'][args.target_data].freq
+        args.target = config['datasets'][args.target_data].target
+        args.embed = config['datasets'][args.target_data].embed
+        args.percent = config['datasets'][args.target_data].percent
+        args.lradj = config['datasets'][args.target_data].lradj
+        if args.freq == 0:
+            args.freq = 'h'
+        test_data, test_loader = data_provider(args, 'test')
 
     time_now = time.time()
     train_steps = len(train_loader) #190470 -52696
-    # train_loader = train_loader.copy()
-    print("train_steps: ", train_steps)
+
     if args.model == 'PatchTST':
         model = PatchTST(args, device)
         model.to(device)
@@ -221,12 +260,6 @@ for ii in range(args.itr):
         model.to(device)
     elif 'ETSformer' in args.model:
         model = ETSformer(args, device)
-        model.to(device)
-    elif args.model == 'NeuralODE':
-        model = NeuralODETimeSeries(args, device)
-        model.to(device)
-    elif args.model == 'NeuralCDE':
-        model = NeuralCDETimeSeries(args, device)
         model.to(device)
     else:
         model = GPT4TS(args, device)
@@ -253,98 +286,90 @@ for ii in range(args.itr):
             y_true = y_true.squeeze()
             mu, sigma, nu = y_pred[0], y_pred[1], y_pred[2]
             # Create the Student's t-distribution
-            nu = torch.abs(nu) + 1e-6
-            sigma = torch.abs(sigma) + 1e-6
-            mu = mu
             student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
             # Calculate the negative log-likelihood
-            # import pdb; pdb.set_trace()
             nll = -student_t.log_prob(y_true)
             return nll.mean()
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
-    train_flag = True #False #True #False #True
-    if train_flag:
-        for epoch in range(args.train_epochs):
 
-            iter_count = 0
-            train_loss = []
-            epoch_time = time.time()
-            for i,  data in tqdm(enumerate(train_loader),total = len(train_loader)):
-                # import pdb; pdb.set_trace()
-                batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
-                iter_count += 1
-                model_optim.zero_grad()
-                batch_x = batch_x.float().to(device)
+    for epoch in range(args.train_epochs):
 
-                batch_y = batch_y.float().to(device)
-                batch_x_mark = batch_x_mark.float().to(device)
-                batch_y_mark = batch_y_mark.float().to(device)
+        iter_count = 0
+        train_loss = []
+        epoch_time = time.time()
+        for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) in tqdm(enumerate(train_loader),total = len(train_loader)):
 
-                
-                # print(seq_seasonal.shape)
-                if args.model == 'TEMPO' or 'multi' in args.model:
-                    seq_trend = seq_trend.float().to(device)
-                    seq_seasonal = seq_seasonal.float().to(device)
-                    seq_resid = seq_resid.float().to(device)
+            iter_count += 1
+            model_optim.zero_grad()
+            batch_x = batch_x.float().to(device)
 
-                    outputs, loss_local = model(batch_x, ii, seq_trend, seq_seasonal, seq_resid) #+ model(seq_seasonal, ii) + model(seq_resid, ii)
-                elif 'former' in args.model:
-                    dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
-                    dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
-                    outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
-                    outputs = model(batch_x, ii)
-                # outputs = outputs[:, -args.pred_len:, :]
-                batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
+            batch_y = batch_y.float().to(device)
+            batch_x_mark = batch_x_mark.float().to(device)
+            batch_y_mark = batch_y_mark.float().to(device)
 
-                loss = criterion(batch_y, outputs) 
-                if args.model == 'GPT4TS_multi' or args.model == 'TEMPO':
-                    if not args.no_stl_loss:
-                        loss += args.stl_weight*loss_local
-                train_loss.append(loss.item())
+            seq_trend = seq_trend.float().to(device)
+            seq_seasonal = seq_seasonal.float().to(device)
+            seq_resid = seq_resid.float().to(device)
 
-                if (i + 1) % 1000 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                    iter_count = 0
-                    time_now = time.time()
-                loss.backward()
-                model_optim.step()
-                # break
-            
-            
-            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
-
-            train_loss = np.average(train_loss)
-            vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
-        
-            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
-                epoch + 1, train_steps, train_loss, vali_loss))
-
-            if args.cos:
-                scheduler.step()
-                print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
+            # print(seq_seasonal.shape)
+            if args.model == 'TEMPO' or 'multi' in args.model:
+                outputs, loss_local = model(batch_x, ii, seq_trend, seq_seasonal, seq_resid) #+ model(seq_seasonal, ii) + model(seq_resid, ii)
+            elif 'former' in args.model:
+                dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
+                dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
+                outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
             else:
-                adjust_learning_rate(model_optim, epoch + 1, args)
-            early_stopping(vali_loss, model, path)
-            if early_stopping.early_stop:
-                print("Early stopping")
-                break
+                outputs = model(batch_x, ii)
+            # outputs = outputs[:, -args.pred_len:, :]
+            batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
+
+            loss = criterion(batch_y, outputs) 
+            if args.model == 'GPT4TS_multi' or args.model == 'TEMPO':
+                if not args.no_stl_loss:
+                    loss += args.stl_weight*loss_local
+            train_loss.append(loss.item())
+
+            if (i + 1) % 1000 == 0:
+                print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                speed = (time.time() - time_now) / iter_count
+                left_time = speed * ((args.train_epochs - epoch) * train_steps - i)
+                print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                iter_count = 0
+                time_now = time.time()
+            loss.backward()
+            model_optim.step()
+            # break
+        
+        
+        print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+
+        train_loss = np.average(train_loss)
+        vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
+       
+        print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+            epoch + 1, train_steps, train_loss, vali_loss))
+
+        if args.cos:
+            scheduler.step()
+            print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
+        else:
+            adjust_learning_rate(model_optim, epoch + 1, args)
+        early_stopping(vali_loss, model, path)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
     
 
-    best_model_path = path + '/' + 'checkpoint.pth'
-    print('best_model_path:', best_model_path)
-    model.load_state_dict(torch.load(best_model_path), strict=False)
-    print("------------------------------------")
-    mse, mae = test(model, test_data, test_loader, args, device, ii)
-    torch.cuda.empty_cache()
-    # print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))
+#     best_model_path = path + '/' + 'checkpoint.pth'
+#     model.load_state_dict(torch.load(best_model_path), strict=False)
+#     print("------------------------------------")
+#     mse, mae = test(model, test_data, test_loader, args, device, ii)
+#     torch.cuda.empty_cache()
+#     print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))
     
-    # mses.append(mse)
-    # maes.append(mae)
+#     mses.append(mse)
+#     maes.append(mae)
 # print("mse_mean = {:.4f}, mse_std = {:.4f}".format(np.mean(mses), np.std(mses)))
 # print("mae_mean = {:.4f}, mae_std = {:.4f}".format(np.mean(maes), np.std(maes)))
 

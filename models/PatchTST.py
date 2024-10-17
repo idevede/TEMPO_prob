@@ -183,6 +183,11 @@ class PatchTST(nn.Module):
         
         self.proj = nn.Linear(configs.d_model * self.patch_num, configs.pred_len, bias=True)
         self.cnt = 0
+
+         # Output layers for Student's t-distribution parameters
+        self.mu = nn.Linear(configs.pred_len, configs.pred_len)  # Mean
+        self.sigma = nn.Linear(configs.pred_len, configs.pred_len)  # Scale (standard deviation)
+        self.nu = nn.Linear(configs.pred_len, configs.pred_len)  # Degrees of freedom
     
     def forward(self, x_enc, itr):
         B, L, M = x_enc.shape
@@ -214,5 +219,15 @@ class PatchTST(nn.Module):
         if self.output_attention:
             return enc_out, attns
         else:
-            return enc_out  # [B, L, D]
+            x = enc_out.permute(0, 2, 1) # [B, L, D] -> [B, D, L]
+            # import pdb; pdb.set_trace()
+            mu = self.mu(x)
+            sigma = F.softplus(self.sigma(x)) + 1e-6  # Ensure scale is positive
+            nu = F.softplus(self.nu(x)) + 2   # Ensure degrees of freedom > 2
+
+
+            # if self.pool:
+            #     return outputs, loss_local #loss_local - reduce_sim_trend - reduce_sim_season - reduce_sim_noise
+            return (mu, sigma, nu)
+            # return enc_out  # [B, L, D]
 
