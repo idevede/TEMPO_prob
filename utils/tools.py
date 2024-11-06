@@ -280,6 +280,9 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
             
 
             if args.model == 'GPT4TS_multi' or args.model == 'NLinear_multi' or 'TEMPO' in args.model:
+                seq_trend = data[4]
+                seq_seasonal = data[5]
+                seq_resid = data[6]
                 seq_trend = seq_trend.float().to(device)
                 seq_seasonal = seq_seasonal.float().to(device)
                 seq_resid = seq_resid.float().to(device)
@@ -297,7 +300,7 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
 
             # pred = outputs.detach().cpu()
             # true = batch_y.detach().cpu()
-
+            # import pdb; pdb.set_trace()
             loss = criterion(batch_y, outputs)
 
             total_loss.append(loss.item())
@@ -361,6 +364,36 @@ def plot_results(synthetic_data, target_mask, gt_data, seq_len,
     # plt.show()
     plt.close()
 
+from torch.distributions import NegativeBinomial
+
+def sample_negative_binomial(mu, alpha, num_samples=1):
+    """
+    Generate samples from a Negative Binomial distribution.
+    
+    Args:
+    mu (torch.Tensor): Mean parameter of the Negative Binomial distribution.
+    alpha (torch.Tensor): Dispersion parameter of the Negative Binomial distribution.
+    num_samples (int): Number of samples to generate for each mu-alpha pair.
+    
+    Returns:
+    torch.Tensor: Samples from the Negative Binomial distribution.
+    """
+    # Ensure mu and alpha are positive
+    mu = torch.clamp(mu, min=1e-6)
+    alpha = torch.clamp(alpha, min=1e-6)
+
+    # Calculate the parameters needed for PyTorch's NegativeBinomial distribution
+    r = 1 / alpha  # shape parameter (number of failures)
+    p = torch.clamp(1 / (1 + mu * alpha), min=1e-6, max=1-1e-6)  # success probability
+    
+    # Create the NegativeBinomial distribution
+    nb_dist = NegativeBinomial(total_count=r, probs=p)
+    
+    # Generate samples
+    samples = nb_dist.sample((num_samples,))
+    
+    return samples
+
 def test(model, test_data, test_loader, args, device, itr):
     preds = []
     trues = []
@@ -405,25 +438,29 @@ def test(model, test_data, test_loader, args, device, itr):
             # import pdb; pdb.set_trace()
             for channel in range(batch_x.shape[-1]):
                 if args.model == 'TEMPO' or args.model == 'TEMPO_t5' or 'multi' in args.model:
-                    seq_trend = seq_trend.float().to(device)
-                    seq_seasonal = seq_seasonal.float().to(device)
-                    seq_resid = seq_resid.float().to(device)
-                    outputs, _ = model(batch_x[:, -args.seq_len:, channel:channel+1], itr,  seq_trend[:, -args.seq_len:, :], seq_seasonal[:, -args.seq_len:, :], seq_resid[:, -args.seq_len:, :])
+                    # seq_trend = seq_trend.float().to(device)
+                    # seq_seasonal = seq_seasonal.float().to(device)
+                    # seq_resid = seq_resid.float().to(device)
+                    outputs, _ = model(batch_x[:, -args.seq_len:, channel:channel+1], itr)
                 elif 'former' in args.model or args.model == 'FEDformer' or args.model == 'TimesNet' or args.model == 'LightTS':
                     dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
                     dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
                     outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     outputs = model(batch_x[:, -args.seq_len:,  channel:channel+1], itr)
-            
-                # outputs = model(batch_x[:, -args.seq_len:, :], itr)
-                mu, sigma, nu = outputs[0], outputs[1], outputs[2]
-                # Create the Student's t-distribution with the predicted parameters
-                student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
 
-                # Generate 30 samples for each prediction
-                num_samples = 35
-                probabilistic_forecasts = student_t.rsample((num_samples,))
+                if args.loss_func == 'prob':
+                    # outputs = model(batch_x[:, -args.seq_len:, :], itr)
+                    mu, sigma, nu = outputs[0], outputs[1], outputs[2]
+                    # Create the Student's t-distribution with the predicted parameters
+                    student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
+
+                    # Generate 30 samples for each prediction
+                    num_samples = 35
+                    probabilistic_forecasts = student_t.rsample((num_samples,))
+                elif args.loss_func == 'negative_binomial':
+                    mu, alpha = outputs[0], outputs[1]
+                    probabilistic_forecasts = sample_negative_binomial(mu, alpha, 35)
 
                 # The shape of probabilistic_forecasts will be (num_samples, batch_size, pred_length)
                 # print(probabilistic_forecasts.shape)
@@ -492,8 +529,19 @@ def test(model, test_data, test_loader, args, device, itr):
     high_q = np.quantile(unormalized_synthetic_data,0.95,axis=1)
     mid_q = np.quantile(unormalized_synthetic_data,0.5,axis=1)
 
-    # plot_results(unormalized_synthetic_data, target_mask, unormzalized_gt_data, 30, low_q, mid_q, high_q, 
-    #              path =  './forecasting_examine_together.png', pred_len = 30)
+    # pred = pred
+    print("Shape of pred: ", mid_q.shape)
+    print("Shape of gt: ", unormzalized_gt_data.shape)
+    print("Shape of synthetic_data: ", unormalized_synthetic_data.shape)
+    # f'/projects/bcqc/dcao1/M5/{args.model}_saved_data'
+    import os
+    os.makedirs(f'/projects/bcqc/dcao1/M5/{args.model}_{args.moving}_saved_data', exist_ok=True)
+    np.savetxt(f'/projects/bcqc/dcao1/M5/{args.model}_{args.moving}_saved_data/ADD_{args.target_data}.csv', mid_q.reshape(-1, 28), delimiter=',')
+    np.savetxt(f'/projects/bcqc/dcao1/M5/{args.model}_{args.moving}_saved_data/ADD_{args.target_data}_gt.csv', unormzalized_gt_data.reshape(-1, 28), delimiter=',')
+    np.save(f'/projects/bcqc/dcao1/M5/{args.model}_{args.moving}_saved_data/ADD_{args.target_data}_samples.npy', unormalized_synthetic_data)
+    # import pdb; pdb.set_trace()
+    plot_results(unormalized_synthetic_data, target_mask, unormzalized_gt_data, 28, low_q, mid_q, high_q, 
+                 path =  './forecasting_examine_together.png', pred_len = 28)
     
 
     unormzalized_gt_data = np.swapaxes(unormzalized_gt_data, -1, -2)

@@ -378,7 +378,7 @@ class TEMPO(nn.Module):
                 return x
 
 
-    def forward(self, x, itr, trend, season, noise, test=False):
+    def forward(self, x, itr, trend=None, season=None, noise=None, test=False):
         B, L, M = x.shape # 4, 512, 1
 
        
@@ -400,6 +400,8 @@ class TEMPO(nn.Module):
             trend, means_trend, stdev_trend = self.get_norm(trend)
             season, means_season, stdev_season = self.get_norm(season)
             noise, means_noise, stdev_noise = self.get_norm(noise)
+            # print("trend shape:", trend.shape)
+            # print("trend_local shape:", trend_local.shape)
             trend_local_l = criterion(trend, trend_local)
             season_local_l = criterion(season, season_local)
             noise_local_l = criterion(noise, noise_local)

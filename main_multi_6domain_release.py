@@ -101,6 +101,8 @@ parser.add_argument('--use_token', type=int, default=0)
 parser.add_argument('--electri_multiplier', type=int, default=1)
 parser.add_argument('--traffic_multiplier', type=int, default=1)
 parser.add_argument('--embed', type=str, default='timeF')
+parser.add_argument('--moving', type=int, default=7)
+
 
 #args = parser.parse_args([])
 args = parser.parse_args()
@@ -261,9 +263,28 @@ for ii in range(args.itr):
             # import pdb; pdb.set_trace()
             nll = -student_t.log_prob(y_true)
             return nll.mean()
+    elif args.loss_func == 'negative_binomial':
+        import torch.distributions as dist
+        def criterion(target, y_pred):
+            # Compute negative log-likelihood of Negative Binomial distribution
+            mu, alpha = y_pred[0], y_pred[1]
+            # import pdb; pdb.set_trace()
+            if len(target.shape)!=3:
+                target = target.unsqueeze(2)
+            log_gamma_x_plus_n = torch.lgamma(target + 1.0 / alpha)
+            log_gamma_x = torch.lgamma(target + 1)
+            log_gamma_n = torch.lgamma(1.0 / alpha)
+            
+            log_prob = log_gamma_x_plus_n - log_gamma_x - log_gamma_n \
+                    - (target + 1.0 / alpha) * torch.log1p(alpha * mu) \
+                    + target * torch.log(alpha * mu) - target * torch.log1p(alpha * mu)
+            
+            return -log_prob.mean()
+
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
-    train_flag = True #False #True #False #True
+    # train_flag = True #False #True #False #True #False #True
+    train_flag = True #False #True #False #True #False #True #False #True #False #True
     if train_flag:
         for epoch in range(args.train_epochs):
 
@@ -281,9 +302,12 @@ for ii in range(args.itr):
                 batch_x_mark = batch_x_mark.float().to(device)
                 batch_y_mark = batch_y_mark.float().to(device)
 
-                
+                # import pdb; pdb.set_trace()
                 # print(seq_seasonal.shape)
                 if args.model == 'TEMPO' or 'multi' in args.model:
+                    seq_trend = data[4]
+                    seq_seasonal = data[5]
+                    seq_resid = data[6]
                     seq_trend = seq_trend.float().to(device)
                     seq_seasonal = seq_seasonal.float().to(device)
                     seq_resid = seq_resid.float().to(device)

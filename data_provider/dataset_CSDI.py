@@ -2383,16 +2383,53 @@ class Dataset_M5(Dataset):
             self.mask_val = []
             self.main_data = []
             self.mask_data = []
+            self.trend_train = []
+            self.trend_val = []
+            self.season_train = []
+            self.season_val = []
+            self.resid_train = []
+            self.resid_val = []
+
             for foods_store in foods_stores:
                 print(foods_store)
                 df = csv_data[(csv_data['store_id'] == foods_store) & (csv_data['dept_id'].isin(foods_depts))]
                 d_columns = [f'd_{i}' for i in range(1, 1942)]
-                filtered_data_d = df[d_columns].T.values
-                filtered_data_d, mask = process_data(filtered_data_d)
-                mean, std = calculate_stats(filtered_data_d[:-self.pred_len], mask[:-self.pred_len])
-                # mean = np.mean(filtered_data_d[:-self.pred_length], axis=0)
-                # std = np.std(filtered_data_d[:-self.pred_length], axis=0)
+                # filtered_data_d = df[d_columns].T.values
+                # filtered_data_d = df[d_columns].T.rolling(window=4, min_periods=1).mean().to_numpy()
+                filtered_data_d = df[d_columns].T.rolling(window=7, min_periods=1).sum().to_numpy()
+                print("filtered_data_d mean", filtered_data_d.mean())
+                # filtered_data_d, mask = process_data(filtered_data_d)
+                # mean, std = calculate_stats(filtered_data_d[:-self.pred_len], mask[:-self.pred_len])
+                mask = np.ones_like(filtered_data_d)
+                mean = np.mean(filtered_data_d[:-self.pred_len], axis=0)
+                std = np.std(filtered_data_d[:-self.pred_len], axis=0)
                 normalized_data = (filtered_data_d - mean) / std
+                # import pdb; pdb.set_trace()
+                # Initialize arrays to store decomposition results
+                trend_all = np.zeros_like(normalized_data)
+                seasonal_all = np.zeros_like(normalized_data)
+                residual_all = np.zeros_like(normalized_data)
+                if self.set_type == 0 or self.set_type ==1:
+                    # Perform STL decomposition for each sample
+                    for i in range(normalized_data.shape[0]):
+                        # Convert each time series to pandas Series
+                        ts = pd.Series(normalized_data[i, :])
+                        
+                        # Perform STL decomposition
+                        # Adjust period based on your data's seasonal pattern
+                        stl = STL(ts, period=24)  # For example, if daily data with yearly seasonality, period=365
+                        result = stl.fit()
+                        
+                        # Store results
+                        trend_all[i, :] = result.trend
+                        seasonal_all[i, :] = result.seasonal
+                        residual_all[i, :] = result.resid
+
+                # Components are now available as numpy arrays
+                trend_np = trend_all #.to_numpy()
+                seasonal_np = seasonal_all #.to_numpy()
+                residual_np = residual_all #.to_numpy()
+
                 start = ((len(normalized_data) - self.seq_length -self.seq_length) -(self.seq_length-self.pred_len))//self.pred_len
                 end = len(normalized_data) - self.seq_length -self.seq_length + 1
                 self.test_data.append(normalized_data[-self.seq_length:].copy())
@@ -2402,16 +2439,24 @@ class Dataset_M5(Dataset):
                 self.test_std.append(std)
 
                 self.use_index = np.arange(start,end,self.pred_len)
+                # self.use_index = np.arange(start,end,1)
 
                 for index in self.use_index[:-3]:
                     self.mask_data.append(mask[index:index+self.seq_length])
                     # self.mask_data.append(np.ones_like(normalized_data[index:index+self.seq_length]))
                     self.main_data.append(normalized_data[index:index+self.seq_length])
+                    self.trend_train.append(trend_np[index:index+self.seq_length])
+                    self.season_train.append(seasonal_np[index:index+self.seq_length])
+                    self.resid_train.append(residual_np[index:index+self.seq_length])
+                    
                     
                 for index in self.use_index[-3:]:
                     self.mask_val.append(mask[index:index+self.seq_length])
                     # self.mask_val.append(np.ones_like(normalized_data[index:index+self.seq_length]))
                     self.val_data.append(normalized_data[index:index+self.seq_length])
+                    self.trend_val.append(trend_np[index:index+self.seq_length])
+                    self.season_val.append(seasonal_np[index:index+self.seq_length])
+                    self.resid_val.append(residual_np[index:index+self.seq_length])
 
             
             '''
@@ -2425,7 +2470,7 @@ class Dataset_M5(Dataset):
         
         
        
-        self.mmean_data = 0
+        self.mean_data = 0
         self.std_data = 1
         
         if self.set_type == 0:
@@ -2450,6 +2495,12 @@ class Dataset_M5(Dataset):
             seq_y = self.main_data[index][-self.pred_len:, feat_id:feat_id+1]
             seq_y = torch.tensor(seq_y, dtype=torch.float32)
             observed_mask = self.mask_data[index][-self.pred_len:, feat_id:feat_id+1]
+            train_trend = self.trend_train[index][:-self.pred_len, feat_id:feat_id+1]
+            train_season = self.season_train[index][:-self.pred_len, feat_id:feat_id+1]
+            train_resid = self.resid_train[index][:-self.pred_len, feat_id:feat_id+1]
+            trend = torch.tensor(train_trend, dtype=torch.float32)
+            season = torch.tensor(train_season, dtype=torch.float32)
+            resid = torch.tensor(train_resid, dtype=torch.float32)
         # seq_x = self.main_data[index:index+self.seq_len]
         elif self.set_type == 1:
             index = orgindex//self.enc_in
@@ -2459,6 +2510,13 @@ class Dataset_M5(Dataset):
             seq_y = self.val_data[index][-self.pred_len:, feat_id:feat_id+1]
             seq_y = torch.tensor(seq_y, dtype=torch.float32)
             observed_mask = self.mask_val[index][-self.pred_len:, feat_id:feat_id+1]
+
+            val_trend = self.trend_val[index][:-self.pred_len, feat_id:feat_id+1]
+            val_season = self.season_val[index][:-self.pred_len, feat_id:feat_id+1]
+            val_resid = self.resid_val[index][:-self.pred_len, feat_id:feat_id+1]
+            trend = torch.tensor(val_trend, dtype=torch.float32)
+            season = torch.tensor(val_season, dtype=torch.float32)
+            resid = torch.tensor(val_resid, dtype=torch.float32)
         else:
             index = self.use_index[orgindex]
             seq_x = self.test_data[index][:-self.pred_len]
@@ -2471,7 +2529,7 @@ class Dataset_M5(Dataset):
       
         
         if self.set_type == 0 or self.set_type == 1:
-            return seq_x, seq_y, observed_mask, observed_mask
+            return seq_x, seq_y, observed_mask, observed_mask, trend, season, resid
         else:
             return seq_x, seq_y, observed_mask, means, stds
         # return seq_x, text_embedding, observed_mask
@@ -2479,6 +2537,7 @@ class Dataset_M5(Dataset):
     def __len__(self):
         if self.set_type == 2:
             return len(self.use_index)
+        print(self.enc_in )
         return len(self.use_index)*self.enc_in   
 
 

@@ -1,12 +1,11 @@
 #!/bin/bash
-#SBATCH --job-name="Linear"
-#SBATCH --output="./logs_mr/Linear.out.%j.%N.out"
+#SBATCH --job-name="TEMPO"
+#SBATCH --output="./logs_mr/MV_TEMPO.out.%j.%N.out"
 #SBATCH --partition=gpuA40x4
 #SBATCH --mem=50G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1  # could be 1 for py-torch
 #SBATCH --cpus-per-task=16   # spread out to use 1 core per numa, set to 64 if tasks is 1
-#SBATCH --constraint="scratch"
 #SBATCH --gpus-per-node=1
 #SBATCH --gpu-bind=closest   # select a cpu close to gpu on pci bus topology
 #SBATCH --account=bdem-delta-gpu
@@ -14,15 +13,16 @@
 #SBATCH -t 24:00:00
 
 
+
 source activate tempo
 hostname
 
 
 seq_len=170
-model=PatchTST #DLinear #PatchTST #DLinear #PatchTST #PatchTST #DLinear #NeuralCDE #GPT4TS #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
+model=TEMPO  #DLinear #PatchTST #DLinear #PatchTST #PatchTST #DLinear #NeuralCDE #GPT4TS #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1
-floss=negative_binomial
+floss=prob #negative_binomial
 
 for percent in 100 
 do
@@ -42,6 +42,8 @@ for datatype in FOODS #HOBBIES HOUSEHOLD
 do
 for area in TX #CA #TX WI
 do
+for moving_size in 4 #CA #TX WI
+do
 mkdir -p logs/$model
 # mkdir -p logs/$model/
 # mkdir logs/$model/$datatype'_'$area.log
@@ -55,7 +57,7 @@ python -u main_multi_6domain_release.py \
     --stl_weight 0.001 \
     --equal $equal \
     --checkpoint ./lora_revin_6domain_checkpoints'_'$floss/ \
-    --model_id M5_mr_$model'_'$area'_'$datatype'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
+    --model_id M5_mv_less_$model'_'$moving_size'_'$area'_'$datatype'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
     --seq_len $seq_len \
@@ -80,9 +82,11 @@ python -u main_multi_6domain_release.py \
     --tmax $tmax \
     --cos 1 \
     --is_gpt 1 \
-    --loss_func $floss #> logs_mr/$model/$$floss'_'$datatype'_'$area.log 2>&1
+    --loss_func $floss \
+    --moving $moving_size
 
 
+done
 done
 done
 done

@@ -73,7 +73,7 @@ class DLinear(nn.Module):
         self.mu = nn.Linear(configs.pred_len, configs.pred_len)  # Mean
         self.sigma = nn.Linear(configs.pred_len, configs.pred_len)  # Scale (standard deviation)
         self.nu = nn.Linear(configs.pred_len, configs.pred_len)  # Degrees of freedom
-
+        self.alpha= nn.Linear(configs.pred_len, configs.pred_len) 
 
 
 
@@ -93,12 +93,17 @@ class DLinear(nn.Module):
 
         x = seasonal_output + trend_output
 
-        mu = self.mu(x)
-        sigma = F.softplus(self.sigma(x)) + 1e-6  # Ensure scale is positive
-        nu = F.softplus(self.nu(x)) + 2   # Ensure degrees of freedom > 2
+        # mu = self.mu(x)
+        # sigma = F.softplus(self.sigma(x)) + 1e-6  # Ensure scale is positive
+        # nu = F.softplus(self.nu(x)) + 2   # Ensure degrees of freedom > 2
 
 
-        # if self.pool:
-        #     return outputs, loss_local #loss_local - reduce_sim_trend - reduce_sim_season - reduce_sim_noise
-        return (mu, sigma, nu)
-        # return x.permute(0,2,1) # to [Batch, Output length, Channel]
+        # # if self.pool:
+        # #     return outputs, loss_local #loss_local - reduce_sim_trend - reduce_sim_season - reduce_sim_noise
+        # return (mu, sigma, nu)
+        # # return x.permute(0,2,1) # to [Batch, Output length, Channel]
+
+        mu = F.softplus(self.mu(x)) + 1e-4  # Ensure mean is positive
+        alpha = F.softplus(self.alpha(x)) + 1e-4  # Ensure dispersion is positive
+
+        return mu.permute(0,2,1), alpha.permute(0,2,1)  # Return to [Batch, Output length, Channel]
