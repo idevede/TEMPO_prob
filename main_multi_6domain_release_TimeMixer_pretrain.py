@@ -1,5 +1,5 @@
 from data_provider.data_factory import data_provider
-from utils.tools import EarlyStopping, adjust_learning_rate, visual, vali, test
+from utils.tools import EarlyStopping, adjust_learning_rate, visual, vali, test, test_prob
 from torch.utils.data import Subset
 from tqdm import tqdm
 from models.PatchTST import PatchTST
@@ -11,7 +11,8 @@ from models.ETSformer import ETSformer
 from models.NeuralODE import NeuralODETimeSeries
 from models.NeuralCDE import NeuralCDETimeSeries
 from models.TimeMixer import Model as TimeMixer
-
+from models.TimeLLM import Model as TimeLLM
+from models.Timer import Model as Timer
 import numpy as np
 import torch
 import torch.nn as nn
@@ -41,6 +42,115 @@ fix_seed = 2021
 random.seed(fix_seed)
 torch.manual_seed(fix_seed)
 np.random.seed(fix_seed)
+
+
+def print_dataset_info(data, loader, name="Dataset"):
+    print(f"\n=== {name} Information ===")
+    print(f"Number of samples: {len(data)}")
+    # print(f"Batch size: {loader.batch_size}")
+    print(f"Number of batches: {len(loader)}")
+    
+    
+    for attr in ['features', 'targets', 'shape']:
+        if hasattr(data, attr):
+            print(f"{attr}: {getattr(data, attr)}")
+    
+
+    # for batch in loader:
+    #     if isinstance(batch, (tuple, list)):
+    #         print("\nFirst batch shapes:")
+    #         for i, item in enumerate(batch):
+    #             print(f"Item {i} shape: {item.shape if hasattr(item, 'shape') else 'N/A'}")
+    #     else:
+    #         print(f"\nFirst batch shape: {batch.shape if hasattr(batch, 'shape') else 'N/A'}")
+    #     break
+
+def prepare_data_loaders(args, config):
+    """
+    Prepare train, validation and test data loaders.
+    
+    Args:
+        args: Arguments containing dataset configurations
+        config: Configuration dictionary
+    
+    Returns:
+        tuple: (train_data, train_loader, test_data, test_loader, val_data, val_loader)
+    """
+    
+    train_datas = []
+    val_datas = []
+    min_sample_num = sys.maxsize
+    
+    # First pass to get validation data and minimum sample number
+    for dataset_name in args.datasets.split(','):
+        _update_args_from_config(args, config, dataset_name)
+        
+        train_data, train_loader = data_provider(args, 'train')
+        if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash']:
+            min_sample_num = min(min_sample_num, len(train_data))
+    
+    for dataset_name in args.target_data.split(','):  
+        _update_args_from_config(args, config, dataset_name)  
+        val_data, val_loader = data_provider(args, 'val') 
+        val_datas.append(val_data[0])
+
+    # Second pass to prepare training data with proper sampling
+    for dataset_name in args.datasets.split(','):
+        _update_args_from_config(args, config, dataset_name)
+        
+        train_data, _ = data_provider(args, 'train')
+        train_data = train_data[0]
+        if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash'] and args.equal == 1:
+            train_data = Subset(train_data, choice(len(train_data), min_sample_num))
+            
+        if args.equal == 1:
+            if dataset_name == 'electricity' and args.electri_multiplier > 1:
+                train_data = Subset(train_data, choice(len(train_data), 
+                                  int(min_sample_num * args.electri_multiplier)))
+            elif dataset_name == 'traffic' and args.traffic_multiplier > 1:
+                train_data = Subset(train_data, choice(len(train_data),
+                                  int(min_sample_num * args.traffic_multiplier)))
+                
+        train_datas.append(train_data)
+
+    # Combine datasets if multiple exist
+    if len(train_datas) > 1:
+        train_data = _combine_datasets(train_datas)
+        val_data = _combine_datasets(val_datas)
+        
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, 
+                                shuffle=True, num_workers=args.num_workers)
+        val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size,
+                              shuffle=False, num_workers=args.num_workers)
+    
+    # Prepare test data
+    _update_args_from_config(args, config, args.target_data)
+    test_data, test_loader = data_provider(args, 'test')
+    test_loader = test_loader[0]
+    print_dataset_info(train_data, train_loader, "Training Dataset")
+    print_dataset_info(val_data, val_loader, "Validation Dataset")
+    print_dataset_info(test_data, test_loader, "Test Dataset")
+    
+    return train_data, train_loader, test_data, test_loader, val_data, val_loader
+
+def _update_args_from_config(args, config, dataset_name):
+    """Update args with dataset specific configurations"""
+    dataset_config = config['datasets'][dataset_name]
+    for key in ['data', 'root_path', 'data_path', 'data_name', 'features',
+                'freq', 'target', 'embed', 'percent', 'lradj']:
+        setattr(args, key, getattr(dataset_config, key))
+    
+    if args.freq == 0:
+        args.freq = 'h'
+
+def _combine_datasets(datasets):
+    """Combine multiple datasets into one"""
+    combined = datasets[0]
+    for dataset in datasets[1:]:
+        combined = torch.utils.data.ConcatDataset([combined, dataset])
+    return combined
+
+
 
 parser = argparse.ArgumentParser(description='GPT4TS')
 
@@ -102,6 +212,47 @@ parser.add_argument('--electri_multiplier', type=int, default=1)
 parser.add_argument('--traffic_multiplier', type=int, default=1)
 parser.add_argument('--embed', type=str, default='timeF')
 
+#TimeMixer
+parser.add_argument('--channel_independence', type=int, default=1,
+                    help='0: channel dependence 1: channel independence for FreTS model')
+parser.add_argument('--decomp_method', type=str, default='moving_avg',
+                    help='method of series decompsition, only support moving_avg or dft_decomp')
+parser.add_argument('--use_norm', type=int, default=1, help='whether to use normalize; True 1 False 0')
+parser.add_argument('--down_sampling_layers', type=int, default=0, help='num of down sampling layers')
+parser.add_argument('--down_sampling_window', type=int, default=1, help='down sampling window size')
+parser.add_argument('--down_sampling_method', type=str, default='avg',
+                    help='down sampling method, only support avg, max, conv')
+parser.add_argument('--use_future_temporal_feature', type=int, default=0,
+                    help='whether to use future_temporal_feature; True 1 False 0')
+
+# de-stationary projector params
+parser.add_argument('--p_hidden_dims', type=int, nargs='+', default=[128, 128],
+                    help='hidden layer dimensions of projector (List)')
+parser.add_argument('--p_hidden_layers', type=int, default=2, help='number of hidden layers in projector')
+
+parser.add_argument('--moving_avg', type=int, default=25, help='window size of moving average')
+parser.add_argument('--factor', type=int, default=1, help='attn factor')
+parser.add_argument('--distil', action='store_false',
+                    help='whether to use distilling in encoder, using this argument means not using distilling',
+                    default=True)
+
+# TimeLLM
+
+parser.add_argument('--llm_model', type=str, default='GPT2', help='LLM model') # LLAMA, GPT2, BERT
+parser.add_argument('--prompt_domain', type=int, default=0, help='')
+parser.add_argument('--llm_dim', type=int, default='768', help='LLM model dimension')# LLama7b:4096; GPT2-small:768; BERT-base:768
+parser.add_argument('--patch_len', type=int, default=16, help='patch length')
+parser.add_argument('--llm_layers', type=int, default=6)
+
+# Timer
+parser.add_argument('--ckpt_path', type=str, default='random', help='checkpoint path')
+parser.add_argument('--activation', type=str, default='gelu', help='activation')
+parser.add_argument('--output_attention', action='store_true', help='whether to output attention in ecoder')
+parser.add_argument('--use_amp', action='store_true', help='use automatic mixed precision training', default=False)
+# autoregressive configs
+parser.add_argument('--use_ims', action='store_true', help='Iterated multi-step', default=False)
+parser.add_argument('--output_len', type=int, default=96, help='output len')
+parser.add_argument('--output_len_list', type=int, nargs="+", help="output_len_list")
 #args = parser.parse_args([])
 args = parser.parse_args()
 config = get_init_config(args.config_path)
@@ -143,66 +294,7 @@ for ii in range(args.itr):
 
 
     
-    train_data_name = args.datasets.split(',')
-    print(train_data_name)
-    train_datas = []
-    val_datas = []
-    min_sample_num = sys.maxsize
-    for dataset_singe in args.datasets.split(','):
-        print(dataset_singe)
-        args.data = config['datasets'][dataset_singe].data
-        args.root_path = config['datasets'][dataset_singe].root_path
-        args.data_path = config['datasets'][dataset_singe].data_path
-        args.txt_path = config['datasets'][dataset_singe].txt_path
-        args.text_condition = False
-        args.data_name = config['datasets'][dataset_singe].data_name
-        args.features = config['datasets'][dataset_singe].features
-        args.freq = config['datasets'][dataset_singe].freq
-        args.target = config['datasets'][dataset_singe].target
-        args.embed = config['datasets'][dataset_singe].embed
-        args.percent = config['datasets'][dataset_singe].percent
-        args.lradj = config['datasets'][dataset_singe].lradj
-        if args.freq == 0:
-            args.freq = 'h'
-       
-        print("dataset: ", args.data)
-        train_data, train_loader = data_provider(args, 'train')
-        if dataset_singe not in ['ETTh1', 'ETTh2', 'ILI', 'exchange']:   
-            min_sample_num = min(min_sample_num, len(train_data))
-        
-        args.percent = 2
-        vali_data, vali_loader = data_provider(args, 'val')
-        args.percent = 100
-
-        # train_datas.append(train_data)
-        val_datas.append(vali_data)
-
-    
-    # train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    # vali_loader = torch.utils.data.DataLoader(vali_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-
-
-    args.data = config['datasets'][args.target_data].data
-    args.root_path = config['datasets'][args.target_data].root_path
-    args.data_path = config['datasets'][args.target_data].data_path
-    args.data_name = config['datasets'][args.target_data].data_name
-    args.features = config['datasets'][dataset_singe].features
-    args.freq = config['datasets'][args.target_data].freq
-    args.target = config['datasets'][args.target_data].target
-    args.embed = config['datasets'][args.target_data].embed
-    args.percent = config['datasets'][args.target_data].percent
-    args.lradj = config['datasets'][args.target_data].lradj
-    if args.freq == 0:
-        args.freq = 'h'
-    test_data, test_loader = data_provider(args, 'test')
-
-    train_data = train_data[0]
-    vali_data = vali_data[0]
-    test_data = test_data[0]
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
-    vali_loader = torch.utils.data.DataLoader(vali_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-    test_loader = torch.utils.data.DataLoader(test_data, batch_size=args.batch_size, shuffle=False, num_workers=args.num_workers)
-
+    train_data, train_loader, test_data, test_loader, vali_data, vali_loader = prepare_data_loaders(args, config)
     time_now = time.time()
     train_steps = len(train_loader) #190470 -52696
     # train_loader = train_loader.copy()
@@ -230,6 +322,12 @@ for ii in range(args.itr):
         model.to(device)
     elif args.model == 'TimeMixer':
         model = TimeMixer(args, device)
+        model.to(device)
+    elif args.model == 'TimeLLM':
+        model = TimeLLM(args)
+        model.to(device)
+    elif args.model == 'Timer':
+        model = Timer(args)
         model.to(device)
     else:
         model = GPT4TS(args, device)
@@ -266,7 +364,7 @@ for ii in range(args.itr):
             return nll.mean()
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
-    train_flag = True #False #True #False #True #False #True #False #True
+    train_flag = True #False #True #False #True #False #True #False #True #False #True
     if train_flag:
         for epoch in range(args.train_epochs):
 
@@ -343,6 +441,7 @@ for ii in range(args.itr):
     print('best_model_path:', best_model_path)
     model.load_state_dict(torch.load(best_model_path), strict=False)
     print("------------------------------------")
+    mse, mae = test_prob(model, test_data, test_loader, args, device, ii)
     mse, mae = test(model, test_data, test_loader, args, device, ii)
     torch.cuda.empty_cache()
     # print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))

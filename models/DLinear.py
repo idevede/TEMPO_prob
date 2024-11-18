@@ -93,6 +93,8 @@ class DLinear(nn.Module):
 
         x = seasonal_output + trend_output
 
+        return x #.permute(0,2,1)
+
         mu = self.mu(x)
         sigma = F.softplus(self.sigma(x)) + 1e-6  # Ensure scale is positive
         nu = F.softplus(self.nu(x)) + 2   # Ensure degrees of freedom > 2

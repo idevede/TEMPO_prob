@@ -487,6 +487,10 @@ class TEMPO(nn.Module):
         # outputs = outputs * stdev + means
         outputs = self.rev_in_trend(outputs, 'denorm')
 
+        if test:
+            return outputs, None
+        return outputs, loss_local
+
         outputs = rearrange(outputs, 'b l m-> b m l', b=B).squeeze()
         mu = self.mu(outputs)
         sigma = F.softplus(self.sigma(outputs)) + 1e-6  # Ensure scale is positive

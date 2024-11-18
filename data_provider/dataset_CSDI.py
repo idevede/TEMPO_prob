@@ -2383,11 +2383,14 @@ class Dataset_M5(Dataset):
             self.mask_val = []
             self.main_data = []
             self.mask_data = []
+            self.test_data_label = []   
             for foods_store in foods_stores:
                 print(foods_store)
-                df = csv_data[(csv_data['store_id'] == foods_store) & (csv_data['dept_id'].isin(foods_depts))]
+                # import pdb; pdb.set_trace()
+                df = csv_data #[(csv_data['store_id'] == foods_store) & (csv_data['dept_id'].isin(foods_depts))]
                 d_columns = [f'd_{i}' for i in range(1, 1942)]
-                filtered_data_d = df[d_columns].T.values
+                filtered_data_d = df[d_columns].T.values #.rolling(window=2, min_periods=1).mean().to_numpy() #.values
+                filtered_data_d_true = df[d_columns].T.values
                 filtered_data_d, mask = process_data(filtered_data_d)
                 mean, std = calculate_stats(filtered_data_d[:-self.pred_len], mask[:-self.pred_len])
                 # mean = np.mean(filtered_data_d[:-self.pred_length], axis=0)
@@ -2396,6 +2399,8 @@ class Dataset_M5(Dataset):
                 start = ((len(normalized_data) - self.seq_length -self.seq_length) -(self.seq_length-self.pred_len))//self.pred_len
                 end = len(normalized_data) - self.seq_length -self.seq_length + 1
                 self.test_data.append(normalized_data[-self.seq_length:].copy())
+                self.test_data_label.append(filtered_data_d_true[-self.seq_length:].copy())
+
                 self.mask_test.append(mask[-self.seq_length:])
                 # self.mask_test.append(np.ones_like(normalized_data[-self.seq_length:]).copy())
                 self.test_mean.append(mean)
@@ -2412,6 +2417,8 @@ class Dataset_M5(Dataset):
                     self.mask_val.append(mask[index:index+self.seq_length])
                     # self.mask_val.append(np.ones_like(normalized_data[index:index+self.seq_length]))
                     self.val_data.append(normalized_data[index:index+self.seq_length])
+
+                break
 
             
             '''
@@ -2464,7 +2471,8 @@ class Dataset_M5(Dataset):
             seq_x = self.test_data[index][:-self.pred_len]
             seq_x = torch.tensor(seq_x, dtype=torch.float32)
             observed_mask = self.mask_test[index][-self.pred_len:]
-            seq_y = self.test_data[index][-self.pred_len:]
+            seq_y = self.test_data_label[index][-self.pred_len:]
+            # seq_y = self.test_data[index][-self.pred_len:]
             means = self.test_mean[index]
             stds = self.test_std[index]
         

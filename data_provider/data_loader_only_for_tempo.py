@@ -143,26 +143,26 @@ class Dataset_ETT_hour(Dataset):
         col_date = df_raw.columns[:1]
         df_time = df_raw[col_date]
         data_raw = pd.DataFrame.join(df_time, pd.DataFrame(data))#[border1:border2]
-        # trend_stamp, seasonal_stamp, resid_stamp = self.stl_resolve(data_raw=data_raw, data_name=self.data_name)
+        trend_stamp, seasonal_stamp, resid_stamp = self.stl_resolve(data_raw=data_raw, data_name=self.data_name)
         # end -dove
 
-        # if self.timeenc == 0:
-        #     df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
-        #     df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
-        #     df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
-        #     df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
-        #     data_stamp = df_stamp.drop(['date'], 1).values
-        # elif self.timeenc == 1:
-        #     data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
-        #     data_stamp = data_stamp.transpose(1, 0)
+        if self.timeenc == 0:
+            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
+            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
+            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
+            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
+            data_stamp = df_stamp.drop(['date'], 1).values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
 
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
-        # self.data_stamp = data_stamp
+        self.data_stamp = data_stamp
 
-        # self.trend_stamp = trend_stamp[border1:border2]
-        # self.seasonal_stamp = seasonal_stamp[border1:border2]
-        # self.resid_stamp = resid_stamp[border1:border2]
+        self.trend_stamp = trend_stamp[border1:border2]
+        self.seasonal_stamp = seasonal_stamp[border1:border2]
+        self.resid_stamp = resid_stamp[border1:border2]
 
     def __getitem__(self, index):
         feat_id = index // self.tot_len
@@ -173,15 +173,13 @@ class Dataset_ETT_hour(Dataset):
         r_end = r_begin + self.label_len + self.pred_len
         seq_x = self.data_x[s_begin:s_end, feat_id:feat_id+1]
         seq_y = self.data_y[r_begin:r_end, feat_id:feat_id+1]
-        seq_x_mark = seq_x
-        seq_y_mark = seq_y
-        # seq_x_mark = self.data_stamp[s_begin:s_end]
-        # seq_y_mark = self.data_stamp[r_begin:r_end]
-        # seq_trend = self.trend_stamp[s_begin:s_end, feat_id:feat_id+1]
-        # seq_seasonal = self.seasonal_stamp[s_begin:s_end, feat_id:feat_id+1]
-        # seq_resid = self.resid_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+        seq_trend = self.trend_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_seasonal = self.seasonal_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_resid = self.resid_stamp[s_begin:s_end, feat_id:feat_id+1]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark #, seq_trend, seq_seasonal, seq_resid
+        return seq_x, seq_y, seq_x_mark, seq_y_mark, seq_trend, seq_seasonal, seq_resid
 
     def __len__(self):
         return (len(self.data_x) - self.seq_len - self.pred_len + 1) * self.enc_in
@@ -307,32 +305,32 @@ class Dataset_ETT_minute(Dataset):
         else:
             data = df_data.values
 
-        # df_stamp = df_raw[['date']][border1:border2]
-        # df_stamp['date'] = pd.to_datetime(df_stamp.date)
-        # if self.timeenc == 0:
-        #     df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
-        #     df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
-        #     df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
-        #     df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
-        #     df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
-        #     df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 15)
-        #     data_stamp = df_stamp.drop(['date'], 1).values
-        # elif self.timeenc == 1:
-        #     data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
-        #     data_stamp = data_stamp.transpose(1, 0)
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        if self.timeenc == 0:
+            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
+            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
+            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
+            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
+            df_stamp['minute'] = df_stamp.date.apply(lambda row: row.minute, 1)
+            df_stamp['minute'] = df_stamp.minute.map(lambda x: x // 15)
+            data_stamp = df_stamp.drop(['date'], 1).values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
 
         # After we get data, we do the stl resolve
         col_date = df_raw.columns[:1]
         df_time = df_raw[col_date]
         data_raw = pd.DataFrame.join(df_time, pd.DataFrame(data))#[border1:border2]
-        # trend_stamp, seasonal_stamp, resid_stamp = self.stl_resolve(data_raw=data_raw, data_name=self.data_name)
+        trend_stamp, seasonal_stamp, resid_stamp = self.stl_resolve(data_raw=data_raw, data_name=self.data_name)
 
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
-        # self.data_stamp = data_stamp
-        # self.trend_stamp = trend_stamp[border1:border2]
-        # self.seasonal_stamp = seasonal_stamp[border1:border2]
-        # self.resid_stamp = resid_stamp[border1:border2]
+        self.data_stamp = data_stamp
+        self.trend_stamp = trend_stamp[border1:border2]
+        self.seasonal_stamp = seasonal_stamp[border1:border2]
+        self.resid_stamp = resid_stamp[border1:border2]
 
     def __getitem__(self, index):
         feat_id = index // self.tot_len
@@ -343,15 +341,13 @@ class Dataset_ETT_minute(Dataset):
         r_end = r_begin + self.label_len + self.pred_len
         seq_x = self.data_x[s_begin:s_end, feat_id:feat_id+1]
         seq_y = self.data_y[r_begin:r_end, feat_id:feat_id+1]
-        seq_x_mark = seq_x
-        seq_y_mark = seq_y
-        # seq_x_mark = self.data_stamp[s_begin:s_end]
-        # seq_y_mark = self.data_stamp[r_begin:r_end]
-        # seq_trend = self.trend_stamp[s_begin:s_end, feat_id:feat_id+1]
-        # seq_seasonal = self.seasonal_stamp[s_begin:s_end, feat_id:feat_id+1]
-        # seq_resid = self.resid_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
+        seq_trend = self.trend_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_seasonal = self.seasonal_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_resid = self.resid_stamp[s_begin:s_end, feat_id:feat_id+1]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark #, seq_trend, seq_seasonal, seq_resid
+        return seq_x, seq_y, seq_x_mark, seq_y_mark, seq_trend, seq_seasonal, seq_resid
 
     def __len__(self):
         return (len(self.data_x) - self.seq_len - self.pred_len + 1) * self.enc_in
@@ -502,28 +498,28 @@ class Dataset_Custom(Dataset):
         col_date = df_raw.columns[:1]
         df_time = df_raw[col_date]
         data_raw = pd.DataFrame.join(df_time, pd.DataFrame(data))#[border1:border2]
-        # trend_stamp, seasonal_stamp, resid_stamp = self.stl_resolve(data_raw=data_raw)
+        trend_stamp, seasonal_stamp, resid_stamp = self.stl_resolve(data_raw=data_raw)
         
         
 
-        # df_stamp = df_raw[['date']][border1:border2]
-        # df_stamp['date'] = pd.to_datetime(df_stamp.date)
-        # if self.timeenc == 0:
-        #     df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
-        #     df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
-        #     df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
-        #     df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
-        #     data_stamp = df_stamp.drop(['date'], 1).values
-        # elif self.timeenc == 1:
-        #     data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
-        #     data_stamp = data_stamp.transpose(1, 0)
+        df_stamp = df_raw[['date']][border1:border2]
+        df_stamp['date'] = pd.to_datetime(df_stamp.date)
+        if self.timeenc == 0:
+            df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
+            df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
+            df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
+            df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
+            data_stamp = df_stamp.drop(['date'], 1).values
+        elif self.timeenc == 1:
+            data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
+            data_stamp = data_stamp.transpose(1, 0)
 
         self.data_x = data[border1:border2]
         self.data_y = data[border1:border2]
-        # self.trend_stamp = trend_stamp[border1:border2]
-        # self.seasonal_stamp = seasonal_stamp[border1:border2]
-        # self.resid_stamp = resid_stamp[border1:border2]
-        # self.data_stamp = data_stamp
+        self.trend_stamp = trend_stamp[border1:border2]
+        self.seasonal_stamp = seasonal_stamp[border1:border2]
+        self.resid_stamp = resid_stamp[border1:border2]
+        self.data_stamp = data_stamp
 
     def __getitem__(self, index):
         feat_id = index // self.tot_len
@@ -534,15 +530,13 @@ class Dataset_Custom(Dataset):
         r_end = r_begin + self.label_len + self.pred_len
         seq_x = self.data_x[s_begin:s_end, feat_id:feat_id+1]
         seq_y = self.data_y[r_begin:r_end, feat_id:feat_id+1]
-        seq_x_mark = seq_x
-        seq_y_mark = seq_y
-        # seq_x_mark = self.data_stamp[s_begin:s_end]
-        # seq_y_mark = self.data_stamp[r_begin:r_end]
-        # seq_trend = self.trend_stamp[s_begin:s_end, feat_id:feat_id+1]
-        # seq_seasonal = self.seasonal_stamp[s_begin:s_end, feat_id:feat_id+1]
-        # seq_resid = self.resid_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_trend = self.trend_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_seasonal = self.seasonal_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_resid = self.resid_stamp[s_begin:s_end, feat_id:feat_id+1]
+        seq_x_mark = self.data_stamp[s_begin:s_end]
+        seq_y_mark = self.data_stamp[r_begin:r_end]
 
-        return seq_x, seq_y, seq_x_mark, seq_y_mark #, seq_trend, seq_seasonal, seq_resid
+        return seq_x, seq_y, seq_x_mark, seq_y_mark, seq_trend, seq_seasonal, seq_resid
 
     def __len__(self):
         # return 1000 #(

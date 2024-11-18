@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name="Linear"
-#SBATCH --output="./logs_mr/Linear.out.%j.%N.out"
+#SBATCH --job-name="phya"
+#SBATCH --output="./logs/TimeLLM_phya_scratch.out.%j.%N.out"
 #SBATCH --partition=gpuA40x4
 #SBATCH --mem=50G
 #SBATCH --nodes=1
@@ -18,15 +18,22 @@ source activate tempo
 hostname
 
 
-seq_len=200
-model=GPT4TS #TEMPO #DLinear #PatchTST #DLinear #PatchTST #PatchTST #DLinear #NeuralCDE #GPT4TS #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
+seq_len=96
+model=TimeLLM #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1
+e_layers=4
+down_sampling_layers=1
+down_sampling_window=2
+learning_rate=0.01
+d_model=16
+d_ff=32
+batch_size=16
 
 
 for percent in 100 
 do
-for pred_len in  28
+for pred_len in  24
 do
 for tmax in 20
 do
@@ -38,37 +45,34 @@ for equal in 1
 do
 for prompt in 1 
 do
-for datatype in FOODS #HOBBIES HOUSEHOLD
-do
-for area in CA #TX WI
-do
 mkdir -p logs/$model
-# mkdir -p logs/$model/
-# mkdir logs/$model/$datatype'_'$area.log
-echo logs/$model/
+mkdir logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equal/
+mkdir logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equal/ettm2_pmt1_no_pool_$model'_'$gpt_layer
+echo logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equal/ettm2_pmt1_no_pool_$model'_'$gpt_layer/test'_'$seq_len'_'$pred_len'_lr'$lr.log
 
 
-python -u main_multi_6domain_release.py \
-    --datasets M5_$area'_'$datatype \
-    --target_data M5_$area'_'$datatype \
+
+python main_multi_6domain_release_TimeLLM.py \
+    --datasets 'physionet' \
+    --target_data 'physionet' \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
     --checkpoint ./lora_revin_6domain_checkpoints'_'$prompt/ \
-    --model_id M5_mr_$model'_'$area'_'$datatype'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
+    --model_id physionet_a_$model'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
     --seq_len $seq_len \
-    --label_len 10 \
+    --label_len 1 \
     --pred_len $pred_len \
     --prompt $prompt\
     --batch_size 256 \
     --learning_rate $lr \
     --train_epochs 100 \
     --decay_fac 0.5 \
-    --d_model 768 \
+    --d_model $d_model \
     --n_heads 4 \
-    --d_ff 768 \
+    --d_ff $d_ff \
     --dropout 0.3 \
     --enc_in 1 \
     --c_out 1 \
@@ -80,11 +84,14 @@ python -u main_multi_6domain_release.py \
     --tmax $tmax \
     --cos 1 \
     --is_gpt 1 \
-    # --loss_func prob #> logs_mr/$model/$datatype'_'$area.log 2>&1
+    --loss_func prob \
+    --down_sampling_layers $down_sampling_layers \
+    --down_sampling_method avg \
+    --down_sampling_window $down_sampling_window \
+    --e_layers $e_layers \
+    #>> logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equal/ettm2_pmt1_no_pool_$model'_'$gpt_layer/test'_'$seq_len'_'$pred_len'_lr'$lr.log
 
 
-done
-done
 done
 done
 done

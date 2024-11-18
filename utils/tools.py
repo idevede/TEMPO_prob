@@ -293,8 +293,8 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
             
             # encoder - decoder
             # outputs = outputs[:, -args.pred_len:, :]
-            batch_y = batch_y[:, -args.pred_len:, :].to(device)
-
+            batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
+            # import pdb; pdb.set_trace()
             # pred = outputs.detach().cpu()
             # true = batch_y.detach().cpu()
 
@@ -361,7 +361,7 @@ def plot_results(synthetic_data, target_mask, gt_data, seq_len,
     # plt.show()
     plt.close()
 
-def test(model, test_data, test_loader, args, device, itr):
+def test_prob(model, test_data, test_loader, args, device, itr):
     preds = []
     trues = []
     # mases = []
@@ -452,6 +452,20 @@ def test(model, test_data, test_loader, args, device, itr):
             
             # preds.append(pred)
             # trues.append(true)
+    # import pdb; pdb.set_trace()
+    # trues = np.array(trues).squeeze()
+    # preds = np.array(preds).squeeze()
+    # masks = np.array(masks).squeeze()
+    # unormzalized_gt_data= np.swapaxes(trues, -1, -2)
+    # preds= np.transpose(preds.squeeze(), (2, 1, 0))
+    # target_mask = np.swapaxes(masks, -1, -2)
+    # # trues= np.swapaxes(trues, -2, -3)
+    # # unormzalized_gt_data= np.swapaxes(trues, -1, -2)
+    # # masks= np.swapaxes(masks, -2, -3)
+    # # target_mask= np.swapaxes(masks, -1, -2)
+
+    # # preds= np.transpose(preds, (2, 1, 3, 0))
+
     trues = np.array(trues)
     preds = np.array(preds)
     masks = np.array(masks)
@@ -464,9 +478,9 @@ def test(model, test_data, test_loader, args, device, itr):
     if 'M5' in args.target_data:
         all_means = np.concatenate(means,0)
         all_stds = np.concatenate(stds,0)
-        all_means =  np.expand_dims(all_means, axis=1) 
-        all_stds =  np.expand_dims(all_stds, axis=1)
-        unormzalized_gt_data = unormzalized_gt_data * all_stds + all_means
+        # all_means =  np.expand_dims(all_means, axis=1) 
+        # all_stds =  np.expand_dims(all_stds, axis=1)
+        # unormzalized_gt_data = unormzalized_gt_data * all_stds + all_means
         # import pdb; pdb.set_trace()
         all_means =  np.expand_dims(all_means, axis=1) 
         all_stds =  np.expand_dims(all_stds, axis=1)
@@ -499,6 +513,8 @@ def test(model, test_data, test_loader, args, device, itr):
     unormzalized_gt_data = np.swapaxes(unormzalized_gt_data, -1, -2)
     unormalized_synthetic_data = np.swapaxes(unormalized_synthetic_data, -1, -2)
     target_mask = np.swapaxes(target_mask, -1, -2)
+   
+    print("unormalized_synthetic_data", unormalized_synthetic_data.shape)
 
     print('CRPS_Sum:', calc_quantile_CRPS_sum(torch.Tensor(unormzalized_gt_data),torch.Tensor(unormalized_synthetic_data),torch.Tensor(target_mask),mean_scaler=0,scaler=1))
 
@@ -507,3 +523,100 @@ def test(model, test_data, test_loader, args, device, itr):
     # import pdb; pdb.set_trace()
     
     return preds, trues #mse, mae
+
+def test(model, test_data, test_loader, args, device, itr):
+    preds = []
+    trues = []
+    # mases = []
+
+    # Initialize accumulators for errors
+    total_mae = 0
+    total_mse = 0
+    n_samples = 0
+    preds = []
+    trues = []
+    masks = []
+    means = []
+    stds = []
+
+    model.eval()
+    with torch.no_grad():
+        for i, data in tqdm(enumerate(test_loader), total=len(test_loader)):
+            
+            #batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3] #, data[4], data[5], data[6]
+            
+            # outputs_np = batch_x.cpu().numpy()
+            # np.save("emb_test/ETTh2_192_test_input_itr{}_{}.npy".format(itr, i), outputs_np)
+            # outputs_np = batch_y.cpu().numpy()
+            # np.save("emb_test/ETTh2_192_test_true_itr{}_{}.npy".format(itr, i), outputs_np)
+
+            batch_x = batch_x.float().to(device)
+            
+            batch_x_mark = batch_x_mark.float().to(device)
+            batch_y_mark = batch_y_mark.float().to(device)
+            if 'M5' in args.target_data:
+                mean, std = data[3], data[4]
+                means.append(mean)
+                stds.append(std)
+
+
+            
+            batch_y = batch_y.float()
+
+            # import pdb; pdb.set_trace()
+            for channel in range(batch_x.shape[-1]):
+                if args.model == 'TEMPO' or args.model == 'TEMPO_t5' or 'multi' in args.model:
+                    seq_trend = seq_trend.float().to(device)
+                    seq_seasonal = seq_seasonal.float().to(device)
+                    seq_resid = seq_resid.float().to(device)
+                    outputs, _ = model(batch_x[:, -args.seq_len:, channel:channel+1], itr,  seq_trend[:, -args.seq_len:, :], seq_seasonal[:, -args.seq_len:, :], seq_resid[:, -args.seq_len:, :])
+                elif 'former' in args.model or args.model == 'FEDformer' or args.model == 'TimesNet' or args.model == 'LightTS':
+                    dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
+                    outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    outputs = model(batch_x[:, -args.seq_len:, channel:channel+1], itr)
+
+                torch.cuda.empty_cache()
+                # print("outputs", outputs.shape)
+                preds.append(outputs.cpu().numpy())
+                trues.append(batch_y[:,:, channel:channel+1].cpu().numpy())
+                # masks.append(batch_x_mark[:,:, channel:channel+1].cpu().numpy())
+
+            
+            
+            # outputs = model(batch_x[:, -args.seq_len:, :], itr)
+            
+            trues = np.array(trues).squeeze()
+            preds = np.array(preds).squeeze()
+            masks = np.array(masks).squeeze()
+
+            np.savetxt(f'/u/dcao1/workspace/CSDI_miss_value/data/M5/saved_data/Linear_prediction.csv', preds.reshape(-1, 28), delimiter=',')
+            
+            # unormzalized_gt_data= np.swapaxes(trues, -1, -2)
+            # preds= np.transpose(preds.squeeze(), (2, 1, 0))
+            # target_mask = np.swapaxes(masks, -1, -2)
+            torch.cuda.empty_cache()
+
+            # Calculate the batch errors
+            batch_mae, batch_mse = metric_mae_mse(preds, trues)
+            
+            # Update the total errors
+            total_mae += batch_mae * batch_x.size(0)  # Assuming batch_x.size(0) is the batch size
+            total_mse += batch_mse * batch_x.size(0)
+            n_samples += batch_x.size(0)
+
+            torch.cuda.empty_cache()
+            
+            # preds.append(pred)
+            # trues.append(true)
+
+    # Calculate the average errors
+    mae = total_mae / n_samples
+    mse = total_mse / n_samples
+
+    print(f'Average MAE: {mae}')
+    print(f'Average MSE: {mse}')
+    
+    return mse, mae

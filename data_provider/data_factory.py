@@ -1,4 +1,4 @@
-# from .dataset import Dataset_Custom, Dataset_Pred,Dataset_ETT_hour, Dataset_ETT_minute,  Dataset_GDELT, Dataset_PSM
+from .data_loader import Dataset_Custom, Dataset_Pred,Dataset_ETT_hour, Dataset_ETT_minute#,  #Dataset_GDELT, Dataset_PSM
 # from .ci_dataset import Dataset_AQ_CI, Dataset_Energy_CI, Dataset_Stock_CI
 from .dataset_CSDI import Dataset_ECL, Dataset_Solar, Dataset_Traffic, Dataset_Wiki, \
     Dataset_Taxi, Dataset_Exchange, Dataset_Traffic_862, Dataset_AQ, Dataset_nasdaq, \
@@ -24,6 +24,12 @@ data_dict = {
     'mimic': Dataset_mimic,
     'physionet': Dataset_physionet,
     'm5': Dataset_M5,
+    'ett_h': Dataset_ETT_hour,
+    'ett_m': Dataset_ETT_minute,
+    'custom': Dataset_Custom,
+    # 'gdelt': Dataset_GDELT,
+
+
     # 'pde': Dataset_PDE
     
 }
@@ -118,10 +124,20 @@ def data_provider(args, flag="train", drop_last_test=False, train_all=False,over
         data_set = Data(
             size=[args.seq_len, 0, args.pred_len],
             split=flag,
+            root_path = args.root_path,
             data_path=args.data_path,
-            txt_path = args.txt_path,
-            text_condition=args.text_condition,
+            # txt_path = args.txt_path,
+            # text_condition=args.text_condition,
         )
+        # before 11/16
+        # data_set = Data(
+        #     size=[args.seq_len, 0, args.pred_len],
+        #     split=flag,
+        #     # root_path = args.root_path,
+        #     data_path=args.data_path,
+        #     txt_path = args.txt_path,
+        #     text_condition=args.text_condition,
+        # )
     print("length of data_sets: ", len(data_set))
     data_loader = DataLoader(
         data_set,

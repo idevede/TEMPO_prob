@@ -109,6 +109,7 @@ class GPT4TS(nn.Module):
         outputs = outputs * stdev
         outputs = outputs + means
 
+        return outputs.squeeze()
         x = outputs.permute(0, 2, 1) # [B, L, D] -> [B, D, L]
         # import pdb; pdb.set_trace()
         mu = self.mu(x)
