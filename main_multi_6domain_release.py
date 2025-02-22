@@ -1,5 +1,5 @@
 from data_provider.data_factory import data_provider
-from utils.tools import EarlyStopping, adjust_learning_rate, visual, vali, test
+from utils.tools import EarlyStopping, adjust_learning_rate, visual, vali, test, test_prob
 from torch.utils.data import Subset
 from tqdm import tqdm
 from models.PatchTST import PatchTST
@@ -266,7 +266,7 @@ for ii in range(args.itr):
             return nll.mean()
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
-    train_flag = True #False #True #False #True #False #True #False #True
+    train_flag = True #False #True #False #True #False #True #False #True #False #True #False #True #False #True
     if train_flag:
         for epoch in range(args.train_epochs):
 
@@ -341,8 +341,9 @@ for ii in range(args.itr):
 
     best_model_path = path + '/' + 'checkpoint.pth'
     print('best_model_path:', best_model_path)
-    model.load_state_dict(torch.load(best_model_path), strict=False)
+    # model.load_state_dict(torch.load(best_model_path), strict=False)
     print("------------------------------------")
+    mse, mae = test_prob(model, test_data, test_loader, args, device, ii)
     mse, mae = test(model, test_data, test_loader, args, device, ii)
     torch.cuda.empty_cache()
     # print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))

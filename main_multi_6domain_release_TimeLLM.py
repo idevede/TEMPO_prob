@@ -302,7 +302,7 @@ for ii in range(args.itr):
             return nll.mean()
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
-    train_flag =True # False #True #False #True #False #True #False #True #False #True #False #True
+    train_flag =False #True # False #True #False #True #False #True #False #True #False #True #False #True
     if train_flag:
         for epoch in range(args.train_epochs):
 

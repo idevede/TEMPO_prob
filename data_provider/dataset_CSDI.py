@@ -54,8 +54,9 @@ class Dataset_ECL(Dataset):
         
         self.test_length= 24*7
         self.valid_length = 24*5
-            
-        self.seq_length = self.seq_len  #+ self.pred_length
+        
+        self.pred_len = 24
+        self.seq_length = self.seq_len + 24  #+ self.pred_length
 
         self.percent = percent
         self.features = features
@@ -205,27 +206,52 @@ class Dataset_ECL(Dataset):
     def __getitem__(self, orgindex):
         # feat_id = index // self.tot_len
         # s_begin = index % self.tot_len
-        index = self.use_index[orgindex]
-        seq_x = self.main_data[index:index+self.seq_len]
-        seq_x = torch.tensor(seq_x, dtype=torch.float32)
-
+        # print('set_type', self.set_type)
+        if self.set_type != 2:
+            index = orgindex//self.enc_in
+            feat_id = orgindex%self.enc_in
+            # s_begin = index % self.tot_len
+            index = self.use_index[index]
+            # index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len, feat_id:feat_id+1]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length, feat_id:feat_id+1]
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
+        else:
+            index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length]
+            seq_y = seq_y*self.std_data + self.mean_data
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
+      
         if self.text_condition:
             text_embedding = self.txt_embeddings[orgindex]
             text_embedding = torch.from_numpy(np.array(text_embedding)).float()
         else:
             text_embedding = torch.zeros(1,768)
 
-        
-        observed_mask = self.mask_data[index:index+self.seq_len]
+       
+        observed_mask = self.mask_data[index+self.seq_length-self.pred_len:index+self.seq_length]
 
         seq_x = torch.tensor(seq_x, dtype=torch.float32)
-        seq_x = seq_x.permute(1,0)
+        # seq_x = seq_x.permute(1,0)
+        # seq_y = seq_y.permute(1,0)
         observed_mask = torch.tensor(observed_mask, dtype=torch.long)
-        observed_mask = observed_mask.permute(1,0)
-        return seq_x, text_embedding, observed_mask
+        # observed_mask = observed_mask.permute(1,0)
+        # print("seq_x.shape = {}".format(seq_x.shape))
+        # print("seq_y.shape = {}".format(seq_y.shape))
+        # print("observed_mask.shape = {}".format(observed_mask.shape))
+        mean = self.mean_data
+        std = self.std_data
+        return seq_x, seq_y, observed_mask, mean, std #text_embedding, observed_mask
+    
     
     def __len__(self):
-        return len(self.use_index)
+        if self.set_type != 2:
+            return len(self.use_index)*self.enc_in
+        else:
+            return len(self.use_index)#*self.enc_in
 
 
 class Dataset_Solar(Dataset):
@@ -247,8 +273,9 @@ class Dataset_Solar(Dataset):
         
         self.test_length= 24*7
         self.valid_length = 24*5
-            
-        self.seq_length = self.seq_len  #+ self.pred_length
+
+        self.pred_len = 24  
+        self.seq_length = self.seq_len  + 24 #self.pred_len
 
         self.percent = percent
         self.features = features
@@ -396,9 +423,26 @@ class Dataset_Solar(Dataset):
     def __getitem__(self, orgindex):
         # feat_id = index // self.tot_len
         # s_begin = index % self.tot_len
-        index = self.use_index[orgindex]
-        seq_x = self.main_data[index:index+self.seq_len]
-        seq_x = torch.tensor(seq_x, dtype=torch.float32)
+        # print('set_type', self.set_type)
+        if self.set_type != 2:
+            index = orgindex//self.enc_in
+            feat_id = orgindex%self.enc_in
+            # s_begin = index % self.tot_len
+            index = self.use_index[index]
+            # index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len, feat_id:feat_id+1]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length, feat_id:feat_id+1]
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
+            
+
+        else:
+            index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length]
+            seq_y = seq_y*self.std_data + self.mean_data
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
       
         if self.text_condition:
             text_embedding = self.txt_embeddings[orgindex]
@@ -407,16 +451,25 @@ class Dataset_Solar(Dataset):
             text_embedding = torch.zeros(1,768)
 
        
-        observed_mask = self.mask_data[index:index+self.seq_len]
+        observed_mask = self.mask_data[index+self.seq_length-self.pred_len:index+self.seq_length]
 
         seq_x = torch.tensor(seq_x, dtype=torch.float32)
-        seq_x = seq_x.permute(1,0)
+        # seq_x = seq_x.permute(1,0)
+        # seq_y = seq_y.permute(1,0)
         observed_mask = torch.tensor(observed_mask, dtype=torch.long)
-        observed_mask = observed_mask.permute(1,0)
-        return seq_x, text_embedding, observed_mask
+        # observed_mask = observed_mask.permute(1,0)
+        
+        mean = self.mean_data
+        std = self.std_data
+        return seq_x, seq_y, observed_mask, mean, std #text_embedding, observed_mask
+    
     
     def __len__(self):
-        return len(self.use_index)
+        if self.set_type != 2:
+            return len(self.use_index)*self.enc_in
+        else:
+            return len(self.use_index)#*self.enc_in
+
 
 
 class Dataset_Traffic(Dataset):
@@ -439,8 +492,9 @@ class Dataset_Traffic(Dataset):
         self.test_length= 24*7
         self.valid_length = 24*5
         self.txt_path = txt_path
-            
-        self.seq_length = self.seq_len  #+ self.pred_length
+        
+        self.pred_len = 24
+        self.seq_length = self.seq_len + self.pred_len
 
         self.percent = percent
         self.features = features
@@ -598,9 +652,23 @@ class Dataset_Traffic(Dataset):
     def __getitem__(self, orgindex):
         # feat_id = index // self.tot_len
         # s_begin = index % self.tot_len
-        index = self.use_index[orgindex]
-        seq_x = self.main_data[index:index+self.seq_len]
-        seq_x = torch.tensor(seq_x, dtype=torch.float32)
+        # print('set_type', self.set_type)
+        if self.set_type != 2:
+            index = orgindex//self.enc_in
+            feat_id = orgindex%self.enc_in
+            # s_begin = index % self.tot_len
+            index = self.use_index[index]
+            # index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len, feat_id:feat_id+1]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length, feat_id:feat_id+1]
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
+        else:
+            index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length]
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
       
         if self.text_condition:
             text_embedding = self.txt_embeddings[orgindex]
@@ -609,16 +677,21 @@ class Dataset_Traffic(Dataset):
             text_embedding = torch.zeros(1,768)
 
        
-        observed_mask = self.mask_data[index:index+self.seq_len]
+        observed_mask = self.mask_data[index+self.seq_length-self.pred_len:index+self.seq_length]
 
         seq_x = torch.tensor(seq_x, dtype=torch.float32)
-        seq_x = seq_x.permute(1,0)
+        # seq_x = seq_x.permute(1,0)
+        # seq_y = seq_y.permute(1,0)
         observed_mask = torch.tensor(observed_mask, dtype=torch.long)
-        observed_mask = observed_mask.permute(1,0)
-        return seq_x, text_embedding, observed_mask
+        # observed_mask = observed_mask.permute(1,0)
+        return seq_x, seq_y, observed_mask, seq_y #text_embedding, observed_mask
+    
     
     def __len__(self):
-        return len(self.use_index)
+        if self.set_type != 2:
+            return len(self.use_index)*self.enc_in
+        else:
+            return len(self.use_index)#*self.enc_in
 
 
 class Dataset_Wiki(Dataset):
@@ -1043,7 +1116,7 @@ class Dataset_Exchange(Dataset):
         self.test_length= 30*5
         self.valid_length = 30*2
             
-        self.seq_length = self.seq_len  #+ self.pred_length
+        self.seq_length = self.seq_len + 30 #+ self.pred_length
 
         self.percent = percent
         self.features = features
@@ -1214,9 +1287,24 @@ class Dataset_Exchange(Dataset):
     def __getitem__(self, orgindex):
         # feat_id = index // self.tot_len
         # s_begin = index % self.tot_len
-        index = self.use_index[orgindex]
-        seq_x = self.main_data[index:index+self.seq_len]
-        seq_x = torch.tensor(seq_x, dtype=torch.float32)
+        # print('set_type', self.set_type)
+        if self.set_type != 2:
+            index = orgindex//self.enc_in
+            feat_id = orgindex%self.enc_in
+            # s_begin = index % self.tot_len
+            index = self.use_index[index]
+            # index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len, feat_id:feat_id+1]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length, feat_id:feat_id+1]
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
+        else:
+            index = self.use_index[orgindex]
+            seq_x = self.main_data[index:index+self.seq_length-self.pred_len]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index+self.seq_length-self.pred_len:index+self.seq_length]
+            seq_y = seq_y*self.std_data + self.mean_data
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
       
         if self.text_condition:
             text_embedding = self.txt_embeddings[orgindex]
@@ -1225,16 +1313,24 @@ class Dataset_Exchange(Dataset):
             text_embedding = torch.zeros(1,768)
 
        
-        observed_mask = self.mask_data[index:index+self.seq_len]
+        observed_mask = self.mask_data[index+self.seq_length-self.pred_len:index+self.seq_length]
 
         seq_x = torch.tensor(seq_x, dtype=torch.float32)
-        seq_x = seq_x.permute(1,0)
+        # seq_x = seq_x.permute(1,0)
+        # seq_y = seq_y.permute(1,0)
         observed_mask = torch.tensor(observed_mask, dtype=torch.long)
-        observed_mask = observed_mask.permute(1,0)
-        return seq_x, text_embedding, observed_mask
+        # observed_mask = observed_mask.permute(1,0)
+
+        mean = self.mean_data
+        std = self.std_data
+        return seq_x, seq_y, observed_mask, mean, std #text_embedding, observed_mask
+    
     
     def __len__(self):
-        return len(self.use_index)
+        if self.set_type != 2:
+            return len(self.use_index)*self.enc_in
+        else:
+            return len(self.use_index)#*self.enc_in
 
     
 class Dataset_Traffic_862(Dataset):
@@ -1821,7 +1917,7 @@ class Dataset_nasdaq(Dataset):
         self.mask_data = mask_matrix.values #n
         self.main_data = self.main_data * self.mask_data
 
-        self.main_data = self.main_data * self.mask_data
+        # self.main_data = self.main_data * self.mask_data
 
         # Mask the data where mask_data is 0
         masked_data = np.where(self.mask_data != 0, self.main_data, np.nan)
@@ -1876,7 +1972,6 @@ class Dataset_nasdaq(Dataset):
         else:
             index = orgindex//self.enc_in
             feat_id = orgindex%self.enc_in
-            # s_begin = index % self.tot_len
             index = self.use_index[index]
             seq_x = self.main_data[index:index+self.seq_len-self.pred_len, feat_id:feat_id+1]
             seq_x = torch.tensor(seq_x, dtype=torch.float32)

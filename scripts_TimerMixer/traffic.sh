@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name="mixer_foundation"
-#SBATCH --output="./logs/TimeMixer_FM.out.%j.%N.out"
+#SBATCH --job-name="mixer_traffic"
+#SBATCH --output="./logs/TimeMixer_traffic.out.%j.%N.out"
 #SBATCH --partition=gpuA40x4
 #SBATCH --mem=50G
 #SBATCH --nodes=1
@@ -12,13 +12,10 @@
 #SBATCH --account=bdem-delta-gpu
 #SBATCH --no-requeue
 #SBATCH -t 24:00:00
-
-
 source activate tempo
 hostname
 
-
-seq_len=168
+seq_len=168 # 168 = 192-24
 model=TimeMixer #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1
@@ -32,7 +29,7 @@ batch_size=16
 
 for percent in 100 
 do
-for pred_len in  30
+for pred_len in  24
 do
 for tmax in 20
 do
@@ -40,7 +37,7 @@ for lr in 0.001
 do
 for gpt_layer in 3 
 do
-for equal in 0
+for equal in 1 
 do
 for prompt in 1 
 do
@@ -51,14 +48,14 @@ echo logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equ
 
 
 
-python main_multi_6domain_release_TimeMixer_pretrain.py \
-    --datasets ETTh1,ETTm1,ETTh2,ETTm2,weather,traffic,electricity \
-    --target_data ETTh1 \
+python main_multi_6domain_release_TimeMixer.py \
+    --datasets traffic_csdi \
+    --target_data traffic_csdi \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
     --checkpoint ./lora_revin_6domain_checkpoints'_'$prompt/ \
-    --model_id Foundation_$model'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
+    --model_id traffic_csdi_$model'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
     --seq_len $seq_len \
@@ -88,7 +85,6 @@ python main_multi_6domain_release_TimeMixer_pretrain.py \
     --down_sampling_method avg \
     --down_sampling_window $down_sampling_window \
     --e_layers $e_layers \
-    # --equal 0 \
     #>> logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equal/ettm2_pmt1_no_pool_$model'_'$gpt_layer/test'_'$seq_len'_'$pred_len'_lr'$lr.log
 
 

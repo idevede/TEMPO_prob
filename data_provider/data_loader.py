@@ -361,9 +361,9 @@ class Dataset_ETT_minute(Dataset):
 
 class Dataset_Custom(Dataset):
     def __init__(self, root_path, split='train', size=None,
-                 features='S', data_path='ETTh1.csv',
+                 features='M', data_path='ETTh1.csv',
                  target='OT', scale=True, timeenc=0, freq='h',
-                 percent=10, data_name = 'weather', max_len=-1, train_all=False):
+                 percent=100, data_name = 'weather', max_len=-1, train_all=False):
         # size [seq_len, label_len, pred_len]
         # info
         if size == None:
@@ -524,6 +524,7 @@ class Dataset_Custom(Dataset):
         # self.seasonal_stamp = seasonal_stamp[border1:border2]
         # self.resid_stamp = resid_stamp[border1:border2]
         # self.data_stamp = data_stamp
+        # import pdb; pdb.set_trace()
 
     def __getitem__(self, index):
         feat_id = index // self.tot_len

@@ -19,7 +19,7 @@ hostname
 
 
 seq_len=168
-model=TimeMixer #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
+model=Timer #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1
 e_layers=4
@@ -53,7 +53,7 @@ echo logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equ
 
 python main_multi_6domain_release_TimeMixer_pretrain.py \
     --datasets ETTh1,ETTm1,ETTh2,ETTm2,weather,traffic,electricity \
-    --target_data ETTh1 \
+    --target_data solar \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \

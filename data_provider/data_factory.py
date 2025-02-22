@@ -90,6 +90,7 @@ def data_provider(args, flag="train", drop_last_test=False, train_all=False,over
     # d = args.data[i]
     d = args.data
     # import pdb; pdb.set_trace()
+    print("loading data: ", d)
     Data = data_dict[args.data]
     if flag == 'test':
         shuffle_flag = False

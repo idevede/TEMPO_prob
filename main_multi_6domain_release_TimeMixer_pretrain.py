@@ -99,6 +99,7 @@ def prepare_data_loaders(args, config):
         _update_args_from_config(args, config, dataset_name)
         
         train_data, _ = data_provider(args, 'train')
+        print("length of the train_data before processing", dataset_name, len(train_data[0]))
         train_data = train_data[0]
         if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash'] and args.equal == 1:
             train_data = Subset(train_data, choice(len(train_data), min_sample_num))
@@ -110,7 +111,8 @@ def prepare_data_loaders(args, config):
             elif dataset_name == 'traffic' and args.traffic_multiplier > 1:
                 train_data = Subset(train_data, choice(len(train_data),
                                   int(min_sample_num * args.traffic_multiplier)))
-                
+
+        print("length of the train_data", dataset_name, len(train_data))     
         train_datas.append(train_data)
 
     # Combine datasets if multiple exist
@@ -364,7 +366,7 @@ for ii in range(args.itr):
             return nll.mean()
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
-    train_flag = True #False #True #False #True #False #True #False #True #False #True
+    train_flag = False #True #False #True #False #True #False #True #True #False #True #False #True #False #True #False #True #False #True
     if train_flag:
         for epoch in range(args.train_epochs):
 
@@ -441,6 +443,7 @@ for ii in range(args.itr):
     print('best_model_path:', best_model_path)
     model.load_state_dict(torch.load(best_model_path), strict=False)
     print("------------------------------------")
+    args.pred_len = 24
     mse, mae = test_prob(model, test_data, test_loader, args, device, ii)
     mse, mae = test(model, test_data, test_loader, args, device, ii)
     torch.cuda.empty_cache()

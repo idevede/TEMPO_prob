@@ -94,17 +94,17 @@ datasets:
     embed: timeF
     freq: 0
     percent: 100 
-  exchange:
-    root_path: ./dataset/exchange_rate/
-    data_path: exchange_rate.csv
-    data_name: exchange
-    data: custom
-    lradj: type4
-    features: M
-    target: OT
-    embed: timeF
-    freq: 0
-    percent: 100
+  # exchange:
+  #   root_path: ./dataset/exchange_rate/
+  #   data_path: exchange_rate.csv
+  #   data_name: exchange
+  #   data: custom
+  #   lradj: type4
+  #   features: M
+  #   target: OT
+  #   embed: timeF
+  #   freq: 0
+  #   percent: 100
   aq:
     root_path: ./data_CSDI_miss/
     data_path: aq/AirQualityUCI_no_missing.csv
@@ -267,6 +267,54 @@ datasets:
     txt_path:  solar_nips/train
     data_name: solar
     data: solar
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100 
+  traffic_csdi:
+    root_path: ./data_CSDI_miss/
+    data_path: traffic_nips/train/train.csv
+    txt_path:  traffic_nips/train/train.csv
+    data_name: traffic
+    data: traffic
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100 #/u/dcao1/workspace/CSDI_miss_value/data/traffic_nips/train/train.csv
+  exchange:
+    root_path: ./data_CSDI_miss/
+    data_path: exchange/train/train.csv
+    txt_path:  exchange/train/train.csv
+    data_name: exchange
+    data: exchange
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100 
+  electricity_csdi:
+    root_path: ./data_CSDI_miss/
+    data_path: electricity_nips
+    txt_path:  electricity_nips
+    data_name: ecl
+    data: ecl
+    lradj: type4
+    features: M
+    target: OT
+    embed: timeF
+    freq: 0
+    percent: 100
+  phy:
+    root_path: ./data_CSDI_miss/
+    data_path: no_need
+    txt_path:  no_need
+    data_name: phy
+    data: phy
     lradj: type4
     features: M
     target: OT

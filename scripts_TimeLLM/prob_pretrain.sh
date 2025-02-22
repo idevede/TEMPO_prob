@@ -52,7 +52,7 @@ echo logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equ
 
 
 python main_multi_6domain_release_TimeMixer_pretrain.py \
-    --datasets ETTh1,ETTm1,ETTh2,ETTm2,weather \
+    --datasets ETTh1,ETTm1,ETTh2,ETTm2,weather,traffic,electricity \
     --target_data ETTh1 \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \

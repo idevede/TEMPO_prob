@@ -1,25 +1,19 @@
 #!/bin/bash
-#SBATCH --job-name="mixer_foundation"
-#SBATCH --output="./logs/TimeMixer_FM.out.%j.%N.out"
-#SBATCH --partition=gpuA40x4
-#SBATCH --mem=50G
-#SBATCH --nodes=1
-#SBATCH --ntasks-per-node=1  # could be 1 for py-torch
-#SBATCH --cpus-per-task=16   # spread out to use 1 core per numa, set to 64 if tasks is 1
-#SBATCH --constraint="scratch"
-#SBATCH --gpus-per-node=1
-#SBATCH --gpu-bind=closest   # select a cpu close to gpu on pci bus topology
-#SBATCH --account=bdem-delta-gpu
-#SBATCH --no-requeue
-#SBATCH -t 24:00:00
+#SBATCH --job-name=72m2m_np          # Job name
+#SBATCH --output=output.6domain_96m2m_no_pool_%A_%a.txt   # Standard output and error log
+#SBATCH --nodes=1                   # Run all processes on a single node    
+#SBATCH --ntasks=1                  # Run on a single CPU
+#SBATCH --mem=20G                   # Total RAM to be used
+#SBATCH --cpus-per-task=64          # Number of CPU cores
+#SBATCH --gres=gpu:1                # Number of GPUs (per node)
+#SBATCH -p gpu                      # Use the gpu partition
+#SBATCH --time=12:00:00             # Specify the time needed for your experiment
+#SBATCH --qos=gpu-8                 # To enable the use of up to 8 GPUs
+# 
+# export CUDA_VISIBLE_DEVICES=2
 
-
-source activate tempo
-hostname
-
-
-seq_len=168
-model=TimeMixer #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
+seq_len=168 # 168 = 192-24
+model=TimeLLM #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1
 e_layers=4
@@ -32,7 +26,7 @@ batch_size=16
 
 for percent in 100 
 do
-for pred_len in  30
+for pred_len in  24
 do
 for tmax in 20
 do
@@ -40,7 +34,7 @@ for lr in 0.001
 do
 for gpt_layer in 3 
 do
-for equal in 0
+for equal in 1 
 do
 for prompt in 1 
 do
@@ -51,14 +45,14 @@ echo logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equ
 
 
 
-python main_multi_6domain_release_TimeMixer_pretrain.py \
-    --datasets ETTh1,ETTm1,ETTh2,ETTm2,weather,traffic,electricity \
-    --target_data ETTh1 \
+python main_multi_6domain_release_TimeLLM.py \
+    --datasets solar \
+    --target_data solar \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
     --checkpoint ./lora_revin_6domain_checkpoints'_'$prompt/ \
-    --model_id Foundation_$model'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
+    --model_id solar_$model'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
     --seq_len $seq_len \
@@ -88,7 +82,6 @@ python main_multi_6domain_release_TimeMixer_pretrain.py \
     --down_sampling_method avg \
     --down_sampling_window $down_sampling_window \
     --e_layers $e_layers \
-    # --equal 0 \
     #>> logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equal/ettm2_pmt1_no_pool_$model'_'$gpt_layer/test'_'$seq_len'_'$pred_len'_lr'$lr.log
 
 

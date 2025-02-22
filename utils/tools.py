@@ -277,30 +277,30 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
 
-            
+            for col_id in range(batch_x.shape[2]):
 
-            if args.model == 'GPT4TS_multi' or args.model == 'NLinear_multi' or 'TEMPO' in args.model:
-                seq_trend = seq_trend.float().to(device)
-                seq_seasonal = seq_seasonal.float().to(device)
-                seq_resid = seq_resid.float().to(device)
-                outputs, _ = model(batch_x, itr,  seq_trend, seq_seasonal, seq_resid)
-            elif 'former' in args.model or args.model == 'FEDformer' or args.model == 'TimesNet' or args.model == 'LightTS':
-                dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
-                dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
-                outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-            else:
-                outputs = model(batch_x, itr)
-            
-            # encoder - decoder
-            # outputs = outputs[:, -args.pred_len:, :]
-            batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
-            # import pdb; pdb.set_trace()
-            # pred = outputs.detach().cpu()
-            # true = batch_y.detach().cpu()
+                if args.model == 'GPT4TS_multi' or args.model == 'NLinear_multi' or 'TEMPO' in args.model:
+                    seq_trend = seq_trend.float().to(device)
+                    seq_seasonal = seq_seasonal.float().to(device)
+                    seq_resid = seq_resid.float().to(device)
+                    outputs, _ = model(batch_x, itr,  seq_trend, seq_seasonal, seq_resid)
+                elif 'former' in args.model or args.model == 'FEDformer' or args.model == 'TimesNet' or args.model == 'LightTS':
+                    dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
+                    outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    outputs = model(batch_x[:,:,col_id:col_id+1], itr)
+                
+                # encoder - decoder
+                # outputs = outputs[:, -args.pred_len:, :]
+                batch_y_2 = batch_y[:, -args.pred_len:, col_id:col_id+1].to(device).squeeze()
+                # import pdb; pdb.set_trace()
+                # pred = outputs.detach().cpu()
+                # true = batch_y.detach().cpu()
 
-            loss = criterion(batch_y, outputs)
+                loss = criterion(batch_y_2, outputs)
 
-            total_loss.append(loss.item())
+                total_loss.append(loss.item())
     total_loss = np.average(total_loss)
     if args.model == 'PatchTST' or args.model == 'DLinear' or args.model == 'TCN' or  args.model == 'NLinear' or  args.model == 'NLinear_multi':
         model.train()
@@ -393,7 +393,8 @@ def test_prob(model, test_data, test_loader, args, device, itr):
             
             batch_x_mark = batch_x_mark.float().to(device)
             batch_y_mark = batch_y_mark.float().to(device)
-            if 'M5' in args.target_data:
+            
+            if 'M5' in args.target_data or 'solar' in args.target_data or 'electricity_csdi' in args.target_data:
                 mean, std = data[3], data[4]
                 means.append(mean)
                 stds.append(std)
@@ -401,8 +402,7 @@ def test_prob(model, test_data, test_loader, args, device, itr):
 
             
             batch_y = batch_y.float()
-
-            # import pdb; pdb.set_trace()
+           
             for channel in range(batch_x.shape[-1]):
                 if args.model == 'TEMPO' or args.model == 'TEMPO_t5' or 'multi' in args.model:
                     seq_trend = seq_trend.float().to(device)
@@ -417,17 +417,17 @@ def test_prob(model, test_data, test_loader, args, device, itr):
                     outputs = model(batch_x[:, -args.seq_len:,  channel:channel+1], itr)
             
                 # outputs = model(batch_x[:, -args.seq_len:, :], itr)
-                mu, sigma, nu = outputs[0], outputs[1], outputs[2]
+                mu, sigma, nu = torch.abs(outputs[0]), torch.abs(outputs[1]), torch.abs(outputs[2])
                 # Create the Student's t-distribution with the predicted parameters
                 student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
-
+                # import pdb; pdb.set_trace()
                 # Generate 30 samples for each prediction
                 num_samples = 35
                 probabilistic_forecasts = student_t.rsample((num_samples,))
 
                 # The shape of probabilistic_forecasts will be (num_samples, batch_size, pred_length)
                 # print(probabilistic_forecasts.shape)
-                preds.append(probabilistic_forecasts.cpu().numpy())
+                preds.append(probabilistic_forecasts.cpu().numpy()[:,:,:,:args.pred_len])
                 trues.append(batch_y[:,:, channel:channel+1].cpu().numpy())
                 masks.append(batch_x_mark[:,:, channel:channel+1].cpu().numpy())
 
@@ -465,7 +465,7 @@ def test_prob(model, test_data, test_loader, args, device, itr):
     # # target_mask= np.swapaxes(masks, -1, -2)
 
     # # preds= np.transpose(preds, (2, 1, 3, 0))
-
+    # import pdb; pdb.set_trace()
     trues = np.array(trues)
     preds = np.array(preds)
     masks = np.array(masks)
@@ -475,7 +475,10 @@ def test_prob(model, test_data, test_loader, args, device, itr):
     target_mask= np.swapaxes(masks.squeeze(), -1, -2)
     preds= np.transpose(preds.squeeze(), (2, 1, 3, 0))
 
-    if 'M5' in args.target_data:
+    # '''
+    
+    if 'M5' in args.target_data or 'solar' in args.target_data or 'electricity' in args.target_data:
+        # import pdb; pdb.set_trace()
         all_means = np.concatenate(means,0)
         all_stds = np.concatenate(stds,0)
         # all_means =  np.expand_dims(all_means, axis=1) 
@@ -484,8 +487,12 @@ def test_prob(model, test_data, test_loader, args, device, itr):
         # import pdb; pdb.set_trace()
         all_means =  np.expand_dims(all_means, axis=1) 
         all_stds =  np.expand_dims(all_stds, axis=1)
-        preds = preds * all_stds + all_means
 
+        all_means =  np.expand_dims(all_means, axis=1) 
+        all_stds =  np.expand_dims(all_stds, axis=1)
+
+        preds = preds * all_stds + all_means
+    # '''
 
     low_q = np.quantile(preds,0.05,axis=1)
     high_q = np.quantile(preds,0.95,axis=1)

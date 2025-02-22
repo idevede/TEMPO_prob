@@ -278,6 +278,7 @@ for ii in range(args.itr):
             # import pdb; pdb.set_trace()
             y_true = y_true.squeeze()
             mu, sigma, nu = y_pred[0], y_pred[1], y_pred[2]
+            # print(mu, sigma, nu)
             # Create the Student's t-distribution
             nu = torch.abs(nu) + 1e-6
             sigma = torch.abs(sigma) + 1e-6
@@ -289,7 +290,7 @@ for ii in range(args.itr):
             return nll.mean()
     
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
-    train_flag = True #False #True #False #True #False #True #False #True #False #True
+    train_flag = True #False #True #False #True #False #True #False #True #False #True #False #True
     if train_flag:
         for epoch in range(args.train_epochs):
 
@@ -307,42 +308,55 @@ for ii in range(args.itr):
                 batch_x_mark = batch_x_mark.float().to(device)
                 batch_y_mark = batch_y_mark.float().to(device)
 
-                
-                # print(seq_seasonal.shape)
-                if args.model == 'TEMPO' or 'multi' in args.model:
-                    seq_trend = seq_trend.float().to(device)
-                    seq_seasonal = seq_seasonal.float().to(device)
-                    seq_resid = seq_resid.float().to(device)
 
-                    outputs, loss_local = model(batch_x, ii, seq_trend, seq_seasonal, seq_resid) #+ model(seq_seasonal, ii) + model(seq_resid, ii)
-                elif 'former' in args.model:
-                    dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
-                    dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
-                    outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
-                else:
-                    outputs = model(batch_x, ii)
-                
-                # outputs = outputs[:, -args.pred_len:, :]
-                batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
-                # import pdb; pdb.set_trace()
-                loss = criterion(batch_y, outputs) 
-                if args.model == 'GPT4TS_multi' or args.model == 'TEMPO':
-                    if not args.no_stl_loss:
-                        loss += args.stl_weight*loss_local
-                train_loss.append(loss.item())
+                for col_id in range(batch_x.shape[2]):
+                    # print(seq_seasonal.shape)
+                    # print(col_id)
+                    if args.model == 'TEMPO' or 'multi' in args.model:
+                        seq_trend = seq_trend.float().to(device)
+                        seq_seasonal = seq_seasonal.float().to(device)
+                        seq_resid = seq_resid.float().to(device)
 
-                if (i + 1) % 1000 == 0:
-                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
-                    speed = (time.time() - time_now) / iter_count
-                    left_time = speed * ((args.train_epochs - epoch) * train_steps - i)
-                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
-                    iter_count = 0
-                    time_now = time.time()
-                loss.backward()
-                model_optim.step()
-                # break
-            
-            
+                        outputs, loss_local = model(batch_x, ii, seq_trend, seq_seasonal, seq_resid) #+ model(seq_seasonal, ii) + model(seq_resid, ii)
+                    elif 'former' in args.model:
+                        dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
+                        dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
+                        outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                    else:
+                        outputs = model(batch_x[:,:,col_id:col_id + 1], ii)
+                    
+                    # outputs = outputs[:, -args.pred_len:, :]
+                    # import pdb; pdb.set_trace()
+                    batch_y_2 = batch_y[:, -args.pred_len:, col_id:col_id + 1].to(device).squeeze()
+                    # import pdb; pdb.set_trace()
+                    try:
+                        loss = criterion(batch_y_2, outputs) 
+                        
+                    except:
+                        break
+                        # continue
+                    if args.model == 'GPT4TS_multi' or args.model == 'TEMPO':
+                        if not args.no_stl_loss:
+                            loss += args.stl_weight*loss_local
+                    train_loss.append(loss.item())
+                    # print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(col_id + 1, epoch + 1, loss.item()))
+
+                    if (i + 1) % 1000 == 0:
+                        print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                        speed = (time.time() - time_now) / iter_count
+                        left_time = speed * ((args.train_epochs - epoch) * train_steps - i)
+                        print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                        iter_count = 0
+                        time_now = time.time()
+                    loss.backward()
+                    model_optim.step()
+                    # break
+                    if args.cos:
+                        scheduler.step()
+                        # print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
+                    else:
+                        adjust_learning_rate(model_optim, epoch + 1, args)
+                    
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
 
             train_loss = np.average(train_loss)
@@ -351,11 +365,7 @@ for ii in range(args.itr):
             print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
                 epoch + 1, train_steps, train_loss, vali_loss))
 
-            if args.cos:
-                scheduler.step()
-                print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
-            else:
-                adjust_learning_rate(model_optim, epoch + 1, args)
+            
             early_stopping(vali_loss, model, path)
             if early_stopping.early_stop:
                 print("Early stopping")

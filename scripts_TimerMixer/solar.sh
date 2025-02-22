@@ -1,18 +1,23 @@
 #!/bin/bash
-#SBATCH --job-name=72m2m_np          # Job name
-#SBATCH --output=output.6domain_96m2m_no_pool_%A_%a.txt   # Standard output and error log
-#SBATCH --nodes=1                   # Run all processes on a single node    
-#SBATCH --ntasks=1                  # Run on a single CPU
-#SBATCH --mem=20G                   # Total RAM to be used
-#SBATCH --cpus-per-task=64          # Number of CPU cores
-#SBATCH --gres=gpu:1                # Number of GPUs (per node)
-#SBATCH -p gpu                      # Use the gpu partition
-#SBATCH --time=12:00:00             # Specify the time needed for your experiment
-#SBATCH --qos=gpu-8                 # To enable the use of up to 8 GPUs
-# 
-# export CUDA_VISIBLE_DEVICES=2
+#SBATCH --job-name="mixer_solar"
+#SBATCH --output="./logs/TimeMixer_solar.out.%j.%N.out"
+#SBATCH --partition=gpuA40x4
+#SBATCH --mem=50G
+#SBATCH --nodes=1
+#SBATCH --ntasks-per-node=1  # could be 1 for py-torch
+#SBATCH --cpus-per-task=16   # spread out to use 1 core per numa, set to 64 if tasks is 1
+#SBATCH --constraint="scratch"
+#SBATCH --gpus-per-node=1
+#SBATCH --gpu-bind=closest   # select a cpu close to gpu on pci bus topology
+#SBATCH --account=bdem-delta-gpu
+#SBATCH --no-requeue
+#SBATCH -t 24:00:00
 
-seq_len=168
+source activate tempo
+hostname
+
+
+seq_len=168 # 168 = 192-24
 model=TimeMixer #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1

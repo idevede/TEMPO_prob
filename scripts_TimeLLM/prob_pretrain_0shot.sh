@@ -1,7 +1,7 @@
 #!/bin/bash
-#SBATCH --job-name="mixer_foundation"
-#SBATCH --output="./logs/TimeMixer_FM.out.%j.%N.out"
-#SBATCH --partition=gpuA40x4
+#SBATCH --job-name="TimeLLM_foundation"
+#SBATCH --output="./logs/TimeLLM_FM.out.%j.%N.out"
+#SBATCH --partition=gpuA100x4
 #SBATCH --mem=50G
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1  # could be 1 for py-torch
@@ -19,7 +19,7 @@ hostname
 
 
 seq_len=168
-model=TimeMixer #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
+model=TimeLLM #PatchTST #GPT4TS #PatchTST #DLinear #PatchTST #DLinear #PatchTST #DLinear #TEMPO #PatchTST 
 electri_multiplier=1
 traffic_multiplier=1
 e_layers=4
@@ -52,8 +52,8 @@ echo logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equ
 
 
 python main_multi_6domain_release_TimeMixer_pretrain.py \
-    --datasets ETTh1,ETTm1,ETTh2,ETTm2,weather,traffic,electricity \
-    --target_data ETTh1 \
+    --datasets ETTh1,ETTm1,ETTh2,ETTm2,weather \
+    --target_data electricity_csdi \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
@@ -88,7 +88,6 @@ python main_multi_6domain_release_TimeMixer_pretrain.py \
     --down_sampling_method avg \
     --down_sampling_window $down_sampling_window \
     --e_layers $e_layers \
-    # --equal 0 \
     #>> logs/$model/loar_revin_$percent'_'percent'_'$prompt'_'prompt'_'equal'_'$equal/ettm2_pmt1_no_pool_$model'_'$gpt_layer/test'_'$seq_len'_'$pred_len'_lr'$lr.log
 
 

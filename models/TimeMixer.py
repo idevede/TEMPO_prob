@@ -346,6 +346,8 @@ class Model(nn.Module):
         #     else:
         #         self.x_mark_dec = self.enc_embedding(None, x_mark_dec)
         # import pdb; pdb.set_trace()
+        # if torch.isnan(x_enc).any():
+        #     print("Found NaN values")
         x_mark_enc = None
         x_enc, x_mark_enc = self.__multi_scale_process_inputs(x_enc, x_mark_enc)
 
@@ -363,7 +365,13 @@ class Model(nn.Module):
         else:
             for i, x in zip(range(len(x_enc)), x_enc, ):
                 B, T, N = x.size()
+                # if torch.isnan(x).any():
+                #     import pdb; pdb.set_trace()
+                #     print("Found NaN values in x")
                 x = self.normalize_layers[i](x, 'norm')
+                if torch.isnan(x).any():
+                    # import pdb; pdb.set_trace()
+                    print("Found NaN values in x after norm")
                 if self.channel_independence == 1:
                     x = x.permute(0, 2, 1).contiguous().reshape(B * N, T, 1)
                 x_list.append(x)
@@ -384,18 +392,24 @@ class Model(nn.Module):
         for i in range(self.layer):
             enc_out_list = self.pdm_blocks[i](enc_out_list)
 
+        # import pdb; pdb.set_trace()
         # Future Multipredictor Mixing as decoder for future
         dec_out_list = self.future_multi_mixing(B, enc_out_list, x_list)
 
         dec_out = torch.stack(dec_out_list, dim=-1).sum(-1)
-        dec_out = self.normalize_layers[0](dec_out, 'denorm')
+        # dec_out = self.normalize_layers[0](dec_out, 'denorm')
         # import pdb; pdb.set_trace()
         # return dec_out
-        x = dec_out.permute(0, 2, 1) # [B, L, D] -> [B, D, L]
+        x_out = dec_out.permute(0, 2, 1) # [B, L, D] -> [B, D, L]
         # import pdb; pdb.set_trace()
-        mu = self.mu(x)
-        sigma = F.softplus(self.sigma(x)) + 1e-6  # Ensure scale is positive
-        nu = F.softplus(self.nu(x)) + 2   # Ensure degrees of freedom > 2
+        
+        if torch.isnan(x_out).any():
+            # import pdb; pdb.set_trace()
+            print("Found NaN values")
+        
+        mu = self.mu(x_out)
+        sigma = F.softplus(self.sigma(x_out)) + 1e-6  # Ensure scale is positive
+        nu = F.softplus(self.nu(x_out)) + 2   # Ensure degrees of freedom > 2
 
 
         # if self.pool:

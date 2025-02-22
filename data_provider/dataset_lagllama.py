@@ -474,7 +474,7 @@ class Dataset_Physics(Dataset):
 
         
             
-        self.seq_length = self.seq_len  #+ self.pred_length
+        self.seq_length = self.seq_len  + self.pred_len
 
         self.percent = percent
         self.features = features
@@ -520,96 +520,120 @@ class Dataset_Physics(Dataset):
 
         
         # paths= self.root_path + self.data_path + '1dvorticity.npy' 
-        # paths=  './dataset/1dvorticity.npy' 
-        paths=  './dataset/1dadvection.npy' 
-        paths='./dataset/1dBurgers.npy'
+        test_paths=  './dataset/1dvorticity.npy' 
+        train_paths=  './dataset/physics/1dvorticity_train.npy' 
+        test_paths=  './dataset/1dadvection.npy' 
+        train_paths=  './dataset/physics/1dadvection_train.npy' 
+        test_paths=  './dataset/1dNavier-Stokes.npy' 
+        train_paths=  './dataset/physics/1dNavier-Stokes_train.npy'
+        test_paths=  './dataset/1ddiffusion-reaction.npy' 
+        # train_paths=  './dataset/physics/1ddiffusion-reaction_train.npy'
+        # test_paths=  './dataset/1dCFD.npy' 
+        # train_paths=  './dataset/physics/1dCFD_train.npy'
+        # test_paths=  './dataset/1dBurgers.npy'
+        # train_paths=  './dataset/physics/1dBurgers_train.npy'
+
+
+        # paths='./dataset/1dBurgers.npy'
         # paths=  './dataset/1dNavier-Stokes.npy'
-        print(paths)
-        df_data = np.load(paths)
+        # print(paths)
+        #1dNavier-Stokes
+        df_data_test = np.load(test_paths)
+        #else:
+        # df_data_test = np.load(test_paths)
+        df_data_train = np.load(train_paths).astype(np.float32).transpose((0, 2, 1))
        
 
-        self.main_data = df_data.astype(np.float32).transpose((0, 2, 1))
-        self.mask_data = np.ones_like(self.main_data)
+        self.main_data_train = df_data_train.astype(np.float32).transpose((0, 2, 1))
+        self.mask_data_train = np.ones_like(self.main_data_train)
+        self.main_data_test = df_data_test.astype(np.float32).transpose((0, 2, 1))
+        self.mask_data_test = np.ones_like(self.main_data_test)
         self.mean_data = 0 #np.mean(self.main_data, axis=0)
         self.std_data = 1 #np.std(self.main_data, axis=0)
         if self.scale:
             if self.set_type == 0:
-                self.main_data = (self.main_data - self.mean_data) / self.std_data
+                self.main_data = (self.main_data_train - self.mean_data) / self.std_data
             if self.set_type == 1:
-                self.main_data = (self.main_data - self.mean_data) / self.std_data
+                self.main_data = (self.main_data_train - self.mean_data) / self.std_data
             if self.set_type == 2:
-                self.main_data = (self.main_data - self.mean_data) / self.std_data
+                self.main_data = (self.main_data_test - self.mean_data) / self.std_data
                 
         self.dataset_description = 'To simulate a 1-dimensional Navier-Stokes equation focusing on the vorticity transport and generate multivariate time series data from it, we can use numerical methods like finite difference or spectral methods for spatial discretization and a simple time-stepping method like Euler or Runge-Kutta for time integration.'
 
-        total_length = len(self.main_data)
+        self.total_length = len(self.main_data)
         self.data_x =  self.main_data
-        if self.text_condition:
-            all_txts = []
-            #maybe think about how missing value affects the calculation of input statistics
-            for i in range(total_length):
-                seq_x = self.mean_data[i, 0:self.seq_len-self.pred_len]
-                # import pdb; pdb.set_trace()
-                seq_x = torch.tensor(seq_x, dtype=torch.float32)
-                seq_x = seq_x.permute(1,0)
-                min_values = torch.min(seq_x, dim=1)[0]
-                min_values = [round(a,5) for a in min_values.tolist()]
-                max_values = torch.max(seq_x, dim=1)[0]
-                max_values = [round(a,5) for a in max_values.tolist()]
-                medians = torch.median(seq_x, dim=1).values
-                medians = [round(a,5) for a in medians.tolist()]
-                lags = calcute_lags(seq_x)
-                lags = lags.tolist()
-                trends = seq_x.diff(dim=1).sum(dim=1)
-                trends = ["upward" if a > 0 else "downward" for a in trends]
-                #print("min_values = {}".format(min_values), "max_values = {}".format(max_values), "medians = {}".format(medians), "lags = {}".format(lags), "trends = {}".format(trends))
-                stats = ("Input statistics: "
-                        f"min values {min_values}, "
-                        f"max values {max_values}, "
-                        f"median values {medians}, "
-                        f"the trend of input are {trends}, "
-                        f"top 5 lags are {lags}")
-                data_text = self.dataset_description + " "+stats
-                all_txts_token = self.tokenizer(all_txts, return_tensors="pt", padding='max_length', truncation=True, max_length=self.max_sen_len).input_ids
-                txt_embeddings = torch.squeeze(self.llm.get_input_embeddings()(all_txts_token))
-                txt_embeddings = torch.max(text_embedding, dim = 0)[0]
-                self.txt_embeddings.append(torch.unsqueeze(txt_embeddings,dim = 0))
 
-            # print("txt_embeddings.shape = {}".format(txt_embeddings.shape))
-            del self.llm
-            del self.tokenizer  
-        
-           
             
-
-        
-       
-        
-        
-
+    
     def __getitem__(self, orgindex):
         # feat_id = index // self.tot_len
         # s_begin = index % self.tot_len
-        
-        seq_x = torch.tensor(self.main_data[orgindex], dtype=torch.float32)
-      
-        if self.text_condition:
-            # text_embedding = self.get_txt_embeddings(self.all_txts[s_begin])
-            text_embedding = self.txt_embeddings[orgindex]
-            # if len(text_embedding.shape) == 1:
-            #     text_embedding = torch.unsqueeze(text_embedding,dim = 0)
-            # text_embedding = torch.max(text_embedding, dim = 0)[0]
-            # text_embedding = torch.unsqueeze(text_embedding,dim = 0)
+        # print('set_type', self.set_type)
+        if self.set_type != 2:
+            index = orgindex//self.enc_in
+            feat_id = orgindex%self.enc_in
+            # s_begin = index % self.tot_len
+            # index = self.use_index[index]
+            # index = self.use_index[orgindex]
+            seq_x = self.main_data[index][:self.seq_length-self.pred_len, feat_id:feat_id+1]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[index][-self.pred_len:, feat_id:feat_id+1]
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
+            observed_mask = self.mask_data_train[index][-self.pred_len:, feat_id:feat_id+1]
+
         else:
-            text_embedding = torch.zeros(1,768)
+            seq_x = self.main_data[orgindex][:self.seq_length-self.pred_len, :] #, index:index+self.seq_length-self.pred_len]
+            seq_x = torch.tensor(seq_x, dtype=torch.float32)
+            seq_y = self.main_data[orgindex][-self.pred_len:, :]
+            seq_y = seq_y*self.std_data + self.mean_data
+            seq_y = torch.tensor(seq_y, dtype=torch.float32)
+            observed_mask = self.mask_data_test[orgindex][-self.pred_len:, :]
        
-        observed_mask = self.mask_data[orgindex]
 
         seq_x = torch.tensor(seq_x, dtype=torch.float32)
-        seq_x = seq_x.permute(1,0)
+        # seq_x = seq_x.permute(1,0)
+        # seq_y = seq_y.permute(1,0)
         observed_mask = torch.tensor(observed_mask, dtype=torch.long)
-        observed_mask = observed_mask.permute(1,0)
-        return seq_x, text_embedding, observed_mask
+        # observed_mask = observed_mask.permute(1,0)
+        # print("seq_x.shape = {}".format(seq_x.shape))
+        # print("seq_y.shape = {}".format(seq_y.shape))
+        # print("observed_mask.shape = {}".format(observed_mask.shape))
+        mean = self.mean_data
+        std = self.std_data
+        return seq_x, seq_y, observed_mask, mean, std #text_embedding, observed_mask
+    
     
     def __len__(self):
-        return len(self.main_data)
+        if self.set_type != 2:
+            return self.total_length*self.enc_in
+        else:
+            return self.total_length#*self.enc_in
+  
+        
+
+    # def __getitem__(self, orgindex):
+    #     # feat_id = index // self.tot_len
+    #     # s_begin = index % self.tot_len
+        
+    #     seq_x = torch.tensor(self.main_data[orgindex], dtype=torch.float32)
+      
+    #     if self.text_condition:
+    #         # text_embedding = self.get_txt_embeddings(self.all_txts[s_begin])
+    #         text_embedding = self.txt_embeddings[orgindex]
+    #         # if len(text_embedding.shape) == 1:
+    #         #     text_embedding = torch.unsqueeze(text_embedding,dim = 0)
+    #         # text_embedding = torch.max(text_embedding, dim = 0)[0]
+    #         # text_embedding = torch.unsqueeze(text_embedding,dim = 0)
+    #     else:
+    #         text_embedding = torch.zeros(1,768)
+       
+    #     observed_mask = self.mask_data[orgindex]
+
+    #     seq_x = torch.tensor(seq_x, dtype=torch.float32)
+    #     seq_x = seq_x.permute(1,0)
+    #     observed_mask = torch.tensor(observed_mask, dtype=torch.long)
+    #     observed_mask = observed_mask.permute(1,0)
+    #     return seq_x, text_embedding, observed_mask
+    
+    # def __len__(self):
+    #     return len(self.main_data)
