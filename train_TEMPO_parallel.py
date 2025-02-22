@@ -238,9 +238,9 @@ def main(args, config):
         else:
             model = GPT4TS(args, device)
         # mse, mae = test(model, test_data, test_loader, args, device, ii)
-        # model.to(device)
-        # last_path = 'checkpoints/Monash_1/Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
-        # best_model_path = os.path.join(last_path, 'checkpoint.pth')
+        model.to(device)
+        last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+        best_model_path = os.path.join(last_path, 'checkpoint.pth')
         model.load_state_dict(torch.load(best_model_path), strict=False)
         model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
         params = model.parameters()
@@ -412,7 +412,7 @@ if __name__ == '__main__':
     parser.add_argument('--loss_func', type=str, default='mse')
     parser.add_argument('--pretrain', type=int, default=1)
     parser.add_argument('--freeze', type=int, default=1)
-    parser.add_argument('--model', type=str, default='GPT4TS_multi')
+    parser.add_argument('--model', type=str, default='TEMPO')
     parser.add_argument('--stride', type=int, default=8)
     parser.add_argument('--max_len', type=int, default=-1)
     parser.add_argument('--hid_dim', type=int, default=16)

@@ -11,11 +11,188 @@ import warnings
 from pathlib import Path
 import pickle
 from statsmodels.tsa.seasonal import STL
+import mmap
+from typing import List, Tuple, Dict, Optional
+import json
 
 warnings.filterwarnings('ignore')
 
 stl_position = 'stl/'
 
+class Dataset_Monash(Dataset):
+    def __init__(self, 
+                 root_path: str,
+                 flag: str = 'train',
+                 size: Optional[Tuple[int, int, int]] = None,
+                 features: str = 'S',
+                 data_path: str = 'ETTh1.csv',
+                 target: str = 'OT',
+                 scale: bool = True,
+                 timeenc: int = 0,
+                 freq: str = 'h',
+                 percent: int = 100,
+                 data_name: str = 'etth2',
+                 max_len: int = -1,
+                 train_all: bool = False):
+        
+        super().__init__()
+        
+        # 初始化序列长度参数
+        self.seq_len = size[0] if size else 24 * 4 * 4
+        self.label_len = size[1] if size else 24 * 4
+        self.pred_len = size[2] if size else 24 * 4
+        
+        # 验证和设置数据集类型
+        assert flag in ['train', 'test', 'val']
+        self.set_type = {'train': 0, 'val': 1, 'test': 2}[flag]
+        
+        # 保存其他参数
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+        self.percent = percent
+        self.data_name = data_name
+        
+        # 设置缓存
+        self.cache_dir = Path(root_path) / 'cache'
+        self.cache_dir.mkdir(exist_ok=True)
+        
+        # 初始化数据
+        self._initialize_data()
+        
+    def _initialize_data(self):
+        """初始化数据集，包括缓存机制"""
+        cache_file = self.cache_dir / f'dataset_cache_{self.set_type}.mmap'
+        index_file = self.cache_dir / f'dataset_index_{self.set_type}.json'
+        
+        # 如果缓存存在，直接加载
+        if cache_file.exists() and index_file.exists():
+            self._load_from_cache(cache_file, index_file)
+            return
+            
+        # 否则重新处理数据
+        self._process_and_cache_data(cache_file, index_file)
+        
+    def _load_from_cache(self, cache_file: Path, index_file: Path):
+        """从缓存加载数据"""
+        with open(index_file, 'r') as f:
+            self.data_index = json.load(f)
+        self.mmap_file = np.memmap(cache_file, dtype='float32', mode='r', shape=(len(self.data_index), self.seq_len + self.pred_len, 7))
+        
+    def _process_and_cache_data(self, cache_file: Path, index_file: Path):
+        """处理数据并创建缓存"""
+        datasets = []
+        directories = ['dataset/chronos', 'dataset/chronos_2']
+        
+        # 收集数据
+        for directory in directories:
+            datasets.extend(self._load_directory(directory))
+            
+        # 确定数据集的划分
+        train_ratio, val_ratio = 0.7, 0.1
+        n_samples = len(datasets)
+        splits = [
+            int(n_samples * train_ratio),
+            int(n_samples * (train_ratio + val_ratio))
+        ]
+        
+        # 选择相应的数据集部分
+        if self.set_type == 0:  # train
+            datasets = datasets[:splits[0]]
+        elif self.set_type == 1:  # val
+            datasets = datasets[splits[0]:splits[1]]
+        else:  # test
+            datasets = datasets[splits[1]:]
+            
+        # 创建内存映射文件
+        data_shape = (len(datasets), self.seq_len + self.pred_len, 7)
+        mmap_array = np.memmap(cache_file, dtype='float32', mode='w+', shape=data_shape)
+        
+        # 处理并保存数据
+        for i, data in enumerate(datasets):
+            processed_data = self._process_single_sample(data)
+            mmap_array[i] = processed_data
+            
+        mmap_array.flush()
+        
+        # 保存索引
+        self.data_index = list(range(len(datasets)))
+        with open(index_file, 'w') as f:
+            json.dump(self.data_index, f)
+            
+        self.mmap_file = np.memmap(cache_file, dtype='float32', mode='r', shape=data_shape)
+        
+    def _load_directory(self, directory: str) -> List[Dict]:
+        """加载指定目录中的数据"""
+        datasets = []
+        allowed_keywords = {
+            'monash_pedestrian_counts',
+            'm4_weekly', 'm4_yearly', 'm4_hourly', 'm4_monthly',
+            'ercot'
+        }
+        
+        for file_path in Path(directory).glob('*.pkl'):
+            # if any(keyword in file_path.name for keyword in allowed_keywords):
+            with open(file_path, 'rb') as f:
+                data = pickle.load(f)
+                for key in data:
+                    datasets.extend(data[key])
+                        
+        return datasets
+        
+    def _process_single_sample(self, data: Dict) -> np.ndarray:
+        """处理单个样本数据"""
+        seq_x = data['x']['target']
+        seq_y = data['y']['target']
+        seq_marks = np.zeros((len(seq_x), 4))
+        
+        processed_data = np.concatenate([
+            np.expand_dims(seq_x, axis=-1),
+            np.expand_dims(seq_y, axis=-1),
+            seq_marks,
+            np.expand_dims(data['x_trend'], axis=-1),
+            np.expand_dims(data['x_seasonal'], axis=-1),
+            np.expand_dims(data['x_resid'], axis=-1)
+        ], axis=-1)
+        
+        return processed_data
+        
+    def __getitem__(self, index: int) -> Tuple[np.ndarray, ...]:
+        """获取单个样本"""
+        data = self.mmap_file[self.data_index[index]]
+        
+        # 解包数据
+        seq_x = data[:self.seq_len, 0]
+        seq_y = data[self.seq_len:, 0]
+        seq_x_mark = data[:self.seq_len, 1:5]
+        seq_y_mark = data[self.seq_len:, 1:5]
+        seq_trend = data[:self.seq_len, 4]
+        seq_seasonal = data[:self.seq_len, 5]
+        seq_resid = data[:self.seq_len, 6]
+        
+        return (
+            np.expand_dims(seq_x, axis=-1),
+            np.expand_dims(seq_y, axis=-1),
+            seq_x_mark,
+            seq_y_mark,
+            torch.tensor(np.expand_dims(seq_trend, axis=-1)),
+            torch.tensor(np.expand_dims(seq_seasonal, axis=-1)),
+            torch.tensor(np.expand_dims(seq_resid, axis=-1))
+        )
+        
+    def __len__(self) -> int:
+        """返回数据集长度"""
+        return len(self.data_index)
+    
+    def inverse_transform(self, data: np.ndarray) -> np.ndarray:
+        """反向转换数据（如果需要）"""
+        if hasattr(self, 'scaler'):
+            return self.scaler.inverse_transform(data)
+        return data
+    
+'''
 class Dataset_Monash(Dataset):
     def __init__(self, root_path, flag='train', size=None,
                  features='S', data_path='ETTh1.csv',
@@ -52,36 +229,7 @@ class Dataset_Monash(Dataset):
 
 
     def __read_data__(self):
-        '''
-        self.scaler = StandardScaler()
-        files = os.listdir(self.root_path)
-        # import pdb; pdb.set_trace()
-        # try:
-        #     # with open(os.path.join(self.root_path, 'all_datasets_windows.pkl'), 'rb') as f:
-        #     #     all_datasets = pickle.load(f)
-        # except:
-        all_datasets = {}
-        files_with_path = [os.path.join(self.root_path, f) for f in files]
-        for file_path in files_with_path:  # 改变变量名避免混淆
-            if 'windows' not in file_path:
-                continue
-            if 'all_datasets' not in file_path:
-                key = file_path.split('/')[-1].split('_window')[0]
-                with open(file_path, 'rb') as f:  # 这里使用新的变量f
-                    dataset = pickle.load(f)
-                # print(key)
-                # import pdb; pdb.set_trace()
-                all_datasets[key] = dataset
         
-        self.all_datasets_list = []
-        for key in all_datasets:
-            # import pdb; pdb.set_trace()
-            lists_Data = list(all_datasets[key].values())
-            inner_data = sum(lists_Data, [])
-            self.all_datasets_list.extend(list(inner_data))
-        # self.all_datasets_list = sum([list(all_datasets[key].values()) for key in all_datasets], [])
-        '''
-
         def save_large_list(data_list, cache_file, chunk_size=1000):
             with open(cache_file, 'wb') as f:
                 for i in range(0, len(data_list), chunk_size):
@@ -123,47 +271,19 @@ class Dataset_Monash(Dataset):
                     ]):
                         print(filename)
                         file_path = os.path.join(directory, filename)
-                        
-                        # 读取pickle文件
                         with open(file_path, 'rb') as file:
                             data = pickle.load(file)
                             
-                            # 检查sliding_windows是否在数据中
-                            # if 'sliding_windows' in data:
+                            
                             for key in list(data.keys()):
-                                all_datasets_list.extend(data[key])
-                        # break
-            # # Save to cache
-            # print("Saving to cache file...")
-            # save_large_list(all_datasets_list, cache_file)
-            
+                                all_datasets_list.extend(data[key])           
             return all_datasets_list
 
         # 使用示例
         directory = 'datasets/chronos'
         self.all_datasets_list = load_all_datasets(directory)
         print(len(self.all_datasets_list))
-        # import pdb; pdb.set_trace()
-
-        
-
-        # if self.timeenc == 0:
-        #     df_stamp['month'] = df_stamp.date.apply(lambda row: row.month, 1)
-        #     df_stamp['day'] = df_stamp.date.apply(lambda row: row.day, 1)
-        #     df_stamp['weekday'] = df_stamp.date.apply(lambda row: row.weekday(), 1)
-        #     df_stamp['hour'] = df_stamp.date.apply(lambda row: row.hour, 1)
-        #     data_stamp = df_stamp.drop(['date'], 1).values
-        # elif self.timeenc == 1:
-        #     data_stamp = time_features(pd.to_datetime(df_stamp['date'].values), freq=self.freq)
-        #     data_stamp = data_stamp.transpose(1, 0)
-
-        # self.data_x = data[border1:border2]
-        # self.data_y = data[border1:border2]
-        # self.data_stamp = data_stamp
-
-        # self.trend_stamp = trend_stamp[border1:border2]
-        # self.seasonal_stamp = seasonal_stamp[border1:border2]
-        # self.resid_stamp = resid_stamp[border1:border2]
+       
 
     def __getitem__(self, index):
         
@@ -190,7 +310,7 @@ class Dataset_Monash(Dataset):
     
     def inverse_transform(self, data):
         return self.scaler.inverse_transform(data)
-
+'''
 
 class Dataset_ETT_hour(Dataset):
     def __init__(self, root_path, flag='train', size=None,

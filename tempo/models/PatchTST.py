@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from einops import rearrange
+# from einops import rearrange
 from math import sqrt, log
 import matplotlib.pyplot as plt
 

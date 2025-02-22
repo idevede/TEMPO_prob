@@ -49,8 +49,8 @@ torchrun --nproc_per_node=2 train_TEMPO_parallel.py \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
-    --checkpoint ./checkpoints/Monash'_'$prompt/ \
-    --model_id Con1_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
+    --checkpoint ./checkpoints/Con2_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent/ \
+    --model_id Con2_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
     --seq_len $seq_len \

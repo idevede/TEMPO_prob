@@ -1,4 +1,5 @@
-from tempo.data_provider.data_loader import Dataset_Monash, Dataset_Custom, Dataset_Pred, Dataset_TSF, Dataset_ETT_hour, Dataset_ETT_minute
+from tempo.data_provider.data_loader import Dataset_Custom, Dataset_Pred, Dataset_TSF, Dataset_ETT_hour, Dataset_ETT_minute
+from tempo.data_provider.data_loader_monash import Dataset_Monash
 from torch.utils.data import DataLoader
 
 data_dict = {

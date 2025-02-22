@@ -99,7 +99,7 @@ datasets:
     freq: 0
     percent: 100
   monash:
-    root_path: ./datasets/all_datasets/Monash_small/
+    root_path: ./dataset/
     data_path: monash.csv
     data_name: monash
     data: monash
