@@ -38,3 +38,9 @@ dataset
 datasets/*
 *.log*
 */*[@]
+checkpoints/*
+*.log
+dataset/*
+checkpoints
+datasets/*
+datasets

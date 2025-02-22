@@ -239,12 +239,16 @@ def main(args, config):
             model = GPT4TS(args, device)
         # mse, mae = test(model, test_data, test_loader, args, device, ii)
         model.to(device)
-        last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
-        best_model_path = os.path.join(last_path, 'checkpoint.pth')
-        model.load_state_dict(torch.load(best_model_path), strict=False)
+        try:
+            last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            best_model_path = os.path.join(last_path, 'checkpoint.pth')
+            model.load_state_dict(torch.load(best_model_path), strict=False)
+            print('Pretrain model loaded successfully!')
+        except:
+            print('No pretrain model, train from scratch!')
         model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
         params = model.parameters()
-        print('Model loaded successfully!')
+        # print('Model loaded successfully!')
         # Load the data
         train_data, train_loader, test_data, test_loader, vali_data, vali_loader, train_sampler, val_sampler = prepare_data_loaders(args, config)
         print("Data loaded successfully!")

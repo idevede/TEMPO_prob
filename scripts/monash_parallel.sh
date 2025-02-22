@@ -13,7 +13,7 @@
 #SBATCH --no-requeue
 #SBATCH -t 12:00:00              # To enable the use of up to 8 GPUs          # To enable the use of up to 8 GPUs
 
-export CUDA_VISIBLE_DEVICES=0,1
+export CUDA_VISIBLE_DEVICES=0 #,1
 
 seq_len=336
 model=TEMPO #TEMPO #PatchTST #_multi
@@ -42,10 +42,10 @@ echo logs/$model/ReVIN_$prompt'_'prompt'_'equal'_'$equal/Monash_$model'_'$gpt_la
 
 
 
-torchrun --nproc_per_node=2 train_TEMPO_parallel.py \
+torchrun --nproc_per_node=1 train_TEMPO_parallel.py \
     --datasets monash \
-    --eval_data ETTm1 \
-    --target_data ETTh2 \
+    --eval_data monash \
+    --target_data monash \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
