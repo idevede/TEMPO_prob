@@ -105,7 +105,7 @@ class EarlyStopping_dist:
         self.counter = 0
         self.best_score = None
         self.early_stop = False
-        self.val_loss_min = np.Inf
+        self.val_loss_min = np.inf #np.Inf
         self.delta = delta
         # self.dist = dist
 
@@ -340,15 +340,32 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
     with torch.no_grad():
         for i, data in tqdm(enumerate(vali_loader)):
 
-            batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
+            
+
+            if len(data) == 7:
+                (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) = data
+                batch_x_mark = batch_x_mark.float().to(device)
+                batch_y_mark = batch_y_mark.float().to(device)
+            if len(data) == 4:
+                batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
+                batch_x_mark = batch_x_mark.float().to(device)
+                batch_y_mark = batch_y_mark.float().to(device)
+            else:
+                # import pdb; pdb.set_trace()
+                batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1)).transpose(0, 1)
+                batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1)).transpose(0, 1)
+                seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1)).transpose(0, 1)
+                seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1)).transpose(0, 1)
+                seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1)).transpose(0, 1)
+                    
+            # batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
             batch_x = batch_x.float().to(device)
             batch_y = batch_y.float()
 
-            batch_x_mark = batch_x_mark.float().to(device)
-            batch_y_mark = batch_y_mark.float().to(device)
+            
 
             if args.model == 'GPT4TS_multi' or args.model == 'NLinear_multi' or 'TEMPO' in args.model:
-                seq_trend, seq_seasonal, seq_resid = data[4], data[5], data[6]
+                # seq_trend, seq_seasonal, seq_resid = data[4], data[5], data[6]
                 seq_trend = seq_trend.float().to(device)
                 seq_seasonal = seq_seasonal.float().to(device)
                 seq_resid = seq_resid.float().to(device)
@@ -422,8 +439,24 @@ def test(model, test_data, test_loader, args, device, itr):
     with torch.no_grad():
         for i, data in tqdm(enumerate(test_loader), total=len(test_loader)):
             
-            batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
+            # batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid = data[0], data[1], data[2], data[3], data[4], data[5], data[6]
             
+            if len(data) == 7:
+                (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) = data
+                batch_x_mark = batch_x_mark.float().to(device)
+                batch_y_mark = batch_y_mark.float().to(device)
+            if len(data) == 4:
+                batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
+                batch_x_mark = batch_x_mark.float().to(device)
+                batch_y_mark = batch_y_mark.float().to(device)
+            else:
+                # import pdb; pdb.set_trace()
+                batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1)).transpose(0, 1)
+                batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1)).transpose(0, 1)
+                seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1)).transpose(0, 1)
+                seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1)).transpose(0, 1)
+                seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1)).transpose(0, 1)
+                    
             # outputs_np = batch_x.cpu().numpy()
             # np.save("emb_test/ETTh2_192_test_input_itr{}_{}.npy".format(itr, i), outputs_np)
             # outputs_np = batch_y.cpu().numpy()
@@ -433,8 +466,7 @@ def test(model, test_data, test_loader, args, device, itr):
             seq_trend = seq_trend.float().to(device)
             seq_seasonal = seq_seasonal.float().to(device)
             seq_resid = seq_resid.float().to(device)
-            batch_x_mark = batch_x_mark.float().to(device)
-            batch_y_mark = batch_y_mark.float().to(device)
+        
 
             
             batch_y = batch_y.float()

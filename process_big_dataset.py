@@ -321,8 +321,10 @@ if __name__ == "__main__":
                 output_base_dir=OUTPUT_DIR,
                 dataset_name=DATASET_NAME
             )
+            gc.collect()
         except Exception as e:
             print(f"Error processing {PKL_PATH}: {e}")
+            gc.collect()
             continue
         # arrow_dir, dataset_files_dir = convert_and_prepare_dataset(
         #     pkl_path=PKL_PATH,
