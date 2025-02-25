@@ -259,14 +259,18 @@ class TEMPO(nn.Module):
         repo_id="Melady/TEMPO",
         filename="TEMPO-80M_v1.pth",
         cache_dir="./checkpoints/TEMPO_checkpoints",
-        probs = False
+        checkpoint_path=None
     ):
         # Download the model checkpoint
-        checkpoint_path = hf_hub_download(
-            repo_id=repo_id,
-            filename=filename,
-            cache_dir=cache_dir
-        )
+        flag = False
+        if checkpoint_path is None:
+            flag = True
+            checkpoint_path = hf_hub_download(
+                repo_id=repo_id,
+                filename=filename,
+                cache_dir=cache_dir
+            )
+
 
         # Download the config.json file
         config_path = hf_hub_download(
@@ -284,10 +288,14 @@ class TEMPO(nn.Module):
         # Initialize the model
         model = cls(cfg, device)
         
-        # Construct the full path to the checkpoint
-        model_path = os.path.join(cfg.checkpoints, cfg.model_id)
-        best_model_path = model_path + '_checkpoint.pth'
-        print(f"Loading model from: {best_model_path}")
+        # # Construct the full path to the checkpoint
+        if flag:
+            # Construct the full path to the checkpoint
+            model_path = os.path.join(cfg.checkpoints, cfg.model_id)
+            best_model_path = model_path + '_checkpoint.pth'
+            print(f"Loading model from: {best_model_path}")
+        else:
+            print(f"Loading model from: {checkpoint_path}")
         
         # Load the state dict
         state_dict = torch.load(checkpoint_path, map_location=device)
@@ -567,7 +575,7 @@ class TEMPO(nn.Module):
         return outputs, loss_local
     
 
-    def predict(self, x, pred_length=96):
+    def predict(self, x, pred_length=1):
         """
         Predict using the TEMPO model.
         
@@ -578,8 +586,12 @@ class TEMPO(nn.Module):
         - Predicted output
         """
         self.eval()  # Set the model to evaluation mode
-
-        x = torch.FloatTensor(x).unsqueeze(0).unsqueeze(2).to(self.device)  # Shape: [1, 336, 1]
+        # import pdb; pdb.set_trace()
+        if x.squeeze().dim() == 1:
+            x = torch.FloatTensor(x.cpu().squeeze()).unsqueeze(0).unsqueeze(2).to(self.device)
+        else:
+            x = torch.FloatTensor(x.cpu().squeeze()).unsqueeze(2).to(self.device)
+        # x = torch.FloatTensor(x.cpu().squeeze()).unsqueeze(0).unsqueeze(2).to(self.device)  # Shape: [1, 336, 1]
         x = self.rev_in_trend(x, 'norm')
         
         B, L, M = x.shape
@@ -617,24 +629,73 @@ class TEMPO(nn.Module):
 
         with torch.no_grad():
             current_input = x.clone()
-            all_predictions = []
-            
-            while len(all_predictions) < pred_length:
+            # 初始化预测结果存储
+            if current_input.shape[0] > 1:  # 多样本情况
+                # 初始化为二维空数组 [batch_size, 0]
+                all_predictions = np.zeros((current_input.shape[0], 0, 1))
+                is_multivariate = True
+            else:
+                # 一维情况
+                all_predictions = []
+                is_multivariate = False
+
+            # 修正循环条件
+            while True:
                 # Forward pass
                 outputs, _ = self.forward(current_input, test=True)
                 outputs = self.rev_in_trend(outputs, 'denorm')
                 step_size = outputs.shape[1]
-                # Extract the predicted values
-                predicted_values = outputs.cpu().squeeze().numpy()[-step_size:]
                 
-                # Append to all predictions
-                all_predictions.extend(predicted_values)
+                # 提取预测值
+                predicted_values = outputs.cpu().numpy()
+                predicted_step = predicted_values[:, -step_size:]
                 
-                # Update the input for the next iteration
-                new_sequence = np.concatenate([current_input.cpu().squeeze().numpy()[step_size:], predicted_values])
-                current_input = torch.FloatTensor(new_sequence).unsqueeze(0).unsqueeze(2)
-        # Trim to the desired length
-        return np.array(all_predictions[:pred_length])
+                # 更新预测结果
+                if is_multivariate:
+                    # 二维情况：沿时间维度拼接
+                    # import pdb; pdb.set_trace()
+                    all_predictions = np.concatenate([all_predictions, predicted_step], axis=1)
+                    # 检查是否达到所需预测长度
+                    if all_predictions.shape[1] >= pred_length:
+                        # 截断到所需长度
+                        all_predictions = all_predictions[:, :pred_length]
+                        break
+                else:
+                    # 一维情况
+                    all_predictions.extend(predicted_values.squeeze()[-step_size:])
+                    # 检查是否达到所需预测长度
+                    if len(all_predictions) >= pred_length:
+                        # 截断到所需长度
+                        all_predictions = all_predictions[:pred_length]
+                        break
+                
+                # 更新下一次迭代的输入
+                if current_input.squeeze().dim() == 1:
+                    # 一维情况
+                    new_sequence = np.concatenate([
+                        current_input.cpu().squeeze().numpy()[step_size:], 
+                        predicted_step.squeeze()
+                    ])
+                    current_input = torch.FloatTensor(new_sequence).unsqueeze(0).unsqueeze(2).to(self.device)
+                else:
+                    # 二维情况
+                    current_input_np = current_input.cpu().squeeze().numpy()
+                    
+                    if len(current_input_np.shape) == 3:  # [batch, time, features]
+                        new_sequence = np.concatenate([
+                            current_input_np[:, step_size:, :], 
+                            predicted_step.reshape(predicted_step.shape[0], -1, 1)
+                        ], axis=1)
+                        current_input = torch.FloatTensor(new_sequence).to(self.device)
+                    else:  # [batch, time]
+                        # import pdb; pdb.set_trace()
+                        new_sequence = np.concatenate([
+                            current_input_np[:, step_size:], 
+                            predicted_step.squeeze()
+                        ], axis=1)
+                        current_input = torch.FloatTensor(new_sequence).unsqueeze(2).to(self.device)
+            
+        return np.array(all_predictions).squeeze()
     
     def predict_prob(self, x, pred_length=96):
         """
