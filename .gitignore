@@ -44,3 +44,4 @@ dataset/*
 checkpoints
 datasets/*
 datasets
+monash_parallel_continue.sh

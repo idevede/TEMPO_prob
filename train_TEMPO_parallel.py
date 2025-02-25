@@ -28,6 +28,7 @@ import random
 import sys
 
 from omegaconf import OmegaConf
+from torch.utils.data import IterableDataset, DataLoader
 
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
@@ -76,6 +77,16 @@ def print_dataset_info(data, loader, name="Dataset"):
     #     else:
     #         print(f"\nFirst batch shape: {batch.shape if hasattr(batch, 'shape') else 'N/A'}")
     #     break
+
+class FilteredStreamingDataset(IterableDataset):
+    def __init__(self, dataset, interval=100):
+        self.dataset = dataset
+        self.interval = interval
+
+    def __iter__(self):
+        for i, item in enumerate(self.dataset):
+            if i % self.interval == 0:
+                yield item
 
 def prepare_data_loaders(args, config, rank =0, world_size=1):
     """
@@ -155,6 +166,9 @@ def prepare_data_loaders(args, config, rank =0, world_size=1):
         # 创建 DataLoader
         train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, num_workers=args.num_workers)
 
+        # val_data = val_data.select(range(0, len(val_data), 10))  # 每10个样本取1个
+        # val_data = val_data.filter(lambda x, idx: idx % 100 == 0, with_indices=True)
+        val_data = FilteredStreamingDataset(val_data, interval=100)
         val_data    = IterableDatasetShard(val_data, num_processes=int(world_size), process_index=int(rank))
         val_loader  = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, num_workers=args.num_workers)
         # train_loader = torch.utils.data.DataLoader(
@@ -281,7 +295,8 @@ def main(args, config):
         # mse, mae = test(model, test_data, test_loader, args, device, ii)
         model.to(device)
         try:
-            last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            last_path = 'checkpoints/Con2_Monash_TEMPO_6_prompt_learn_336_96_100/Con2_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
             best_model_path = os.path.join(last_path, 'checkpoint.pth')
             model.load_state_dict(torch.load(best_model_path), strict=False)
             print('Pretrain model loaded successfully!')

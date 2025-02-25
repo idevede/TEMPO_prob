@@ -13,7 +13,7 @@
 #SBATCH --no-requeue
 #SBATCH -t 12:00:00              # To enable the use of up to 8 GPUs          # To enable the use of up to 8 GPUs
 
-export CUDA_VISIBLE_DEVICES=6,7 #0 #,1
+export CUDA_VISIBLE_DEVICES=4,5,6,7 #0 #,1
 
 seq_len=336
 model=TEMPO #TEMPO #PatchTST #_multi
@@ -42,15 +42,15 @@ echo logs/$model/ReVIN_$prompt'_'prompt'_'equal'_'$equal/Monash_$model'_'$gpt_la
 
 
 
-torchrun --nproc_per_node=2 train_TEMPO_parallel.py \
+torchrun --nproc_per_node=4 train_TEMPO_parallel.py \
     --datasets monash \
     --eval_data monash \
     --target_data monash \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
-    --checkpoint ./checkpoints/Con2_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent/ \
-    --model_id Con2_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
+    --checkpoint ./checkpoints/Con3_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent/ \
+    --model_id Con3_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
     --seq_len $seq_len \

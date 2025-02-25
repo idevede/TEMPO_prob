@@ -296,7 +296,7 @@ if __name__ == "__main__":
 
    
     # 指定目录
-    directory = "dataset/chronos_2"
+    directory = "dataset/chronos"
 
     # 获取目录下的所有.pkl文件
     pkl_files = [f for f in os.listdir(directory) if f.endswith('.pkl')]
@@ -311,7 +311,8 @@ if __name__ == "__main__":
         # PKL_PATH = "dataset/chronos/m4_weekly.pkl"
         # OUTPUT_DIR = "dataset/chronos_arrow/m4_weekly/"
         # DATASET_NAME = "m4_weekly"  
-        if DATASET_NAME == "mexico_city_bikes":
+        if DATASET_NAME == "mexico_city_bikes" or DATASET_NAME == "m4_daily" \
+            or DATASET_NAME == "m4_yearly" or DATASET_NAME == "m4_weekly" or DATASET_NAME == "ercot": 
             continue
 
         # 转换并准备数据集

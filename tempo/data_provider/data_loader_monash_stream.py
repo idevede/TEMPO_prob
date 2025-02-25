@@ -115,6 +115,11 @@ class StreamingMonashDataset(IterableDataset):
         if not arrow_files:
             self.logger.warning(f"No arrow files found in {arrow_dir}")
             return False
+        # 如果没发现'dataset_files/dataset_info.json'文件， false
+        info_path = Path(root_dir) / 'dataset_files/dataset_info.json'
+        if not info_path.exists():
+            self.logger.warning(f"Dataset info file not found: {info_path}")
+            return False
             
         return True
     

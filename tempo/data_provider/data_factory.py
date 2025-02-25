@@ -46,7 +46,8 @@ def data_provider(args, flag, drop_last_test=True, train_all=False):
     Data = data_dict[args.data]
     if args.data == 'monash':
          # 定义数据目录
-        root_dirs = get_dataset_dirs("./dataset/chronos_ready")
+        # root_dirs = get_dataset_dirs("./dataset/chronos_ready")
+        root_dirs = get_dataset_dirs("./dataset/chronos_arrow")
 
     
         data_set = Data(
