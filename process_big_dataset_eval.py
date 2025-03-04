@@ -15,8 +15,6 @@ from datasets.info import DatasetInfo
 from datasets.splits import SplitInfo
 import numpy as np
 
-interval = 10 
-
 class MonashDatasetConverter:
     def __init__(self, chunk_size_mb=200):
         self.chunk_size_mb = chunk_size_mb * 1024 * 1024
@@ -39,8 +37,7 @@ class MonashDatasetConverter:
             processed_data = []
             
             for key in data.keys():
-                 # 每100个样本取1个
-                for item in data[key][::interval]:
+                for item in data[key]:
                     processed_item = {
                         'x_target': item['x']['target'].astype(np.float32).tolist(),
                         'y_target': item['y']['target'].astype(np.float32).tolist(),
@@ -168,7 +165,7 @@ class DatasetStateGenerator:
             elif file.endswith('.parquet'):
                 import pyarrow.parquet as pq
                 total_examples += pq.read_metadata(file).num_rows
-        return int(total_examples/interval)
+        return total_examples
 
     def generate_state_json(self, data_dir, output_dir):
         """生成state.json文件"""
@@ -285,12 +282,25 @@ def get_file_info(file_path):
     # 获取文件名（不含路径）
     filename = os.path.basename(file_path)
     # 获取不含扩展名的文件名
-    dataset_name = os.path.splitext(filename)[0]
+    base_name = os.path.splitext(filename)[0]
+    # 获取上一级目录名
+    parent_dir = os.path.basename(os.path.dirname(file_path))
+    # 组合目录名和文件名
+    dataset_name = f"{parent_dir}_{base_name}"
     
     pkl_path = file_path
-    output_dir = f"dataset/chronos_0.1/{dataset_name}/"
+    output_dir = f"dataset/gift_eval_arrow/{dataset_name}/"
     
     return pkl_path, output_dir, dataset_name
+
+# 递归查找所有.pkl文件
+def find_pkl_files(directory):
+    pkl_files = []
+    for root, dirs, files in os.walk(directory):
+        for file in files:
+            if file.endswith('.pkl'):
+                pkl_files.append(os.path.join(root, file))
+    return pkl_files
 
 
 # 使用示例
@@ -299,25 +309,22 @@ if __name__ == "__main__":
 
    
     # 指定目录
-    directory = "dataset/chronos_2"
+    directory = "dataset/gift_eval"
 
-    # 获取目录下的所有.pkl文件
-    pkl_files = [f for f in os.listdir(directory) if f.endswith('.pkl')]
+    pkl_files = find_pkl_files(directory)
 
-    for pkl_file in pkl_files:
-        full_path = os.path.join(directory, pkl_file)
+    for full_path in pkl_files:
         PKL_PATH, OUTPUT_DIR, DATASET_NAME = get_file_info(full_path)
         print(f"PKL_PATH = {PKL_PATH}")
         print(f"OUTPUT_DIR = {OUTPUT_DIR}")
         print(f"DATASET_NAME = {DATASET_NAME}")
         print("---")
-        # or DATASET_NAME == "m4_yearly" or DATASET_NAME == "m4_weekly" or 
-        # if DATASET_NAME == "mexico_city_bikes" \
-        #     or DATASET_NAME == "ercot" \
-        #         or  DATASET_NAME == "m4_daily": 
-        if DATASET_NAME == "m4_daily": 
+            
+        if DATASET_NAME == "mexico_city_bikes" \
+            or DATASET_NAME == "m4_yearly" or DATASET_NAME == "m4_weekly" or DATASET_NAME == "ercot": 
             continue
-
+        if "m4_hourly" in DATASET_NAME or "m4_daily" in DATASET_NAME:
+            continue
         # 转换并准备数据集
         try:
             arrow_dir, dataset_files_dir = convert_and_prepare_dataset(

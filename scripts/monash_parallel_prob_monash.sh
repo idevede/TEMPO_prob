@@ -13,7 +13,7 @@
 #SBATCH --no-requeue
 #SBATCH -t 12:00:00              # To enable the use of up to 8 GPUs          # To enable the use of up to 8 GPUs
 
-export CUDA_VISIBLE_DEVICES=4,5,6,7 #4,5,6,7 #0 #,1 0,1,2,3 #
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4,5,6,7 #4,5,6,7 #0 #,1
 
 seq_len=336
 model=TEMPO #TEMPO #PatchTST #_multi
@@ -21,7 +21,7 @@ electri_multiplier=3 # 3 times more data than the other small samples.
 traffic_multiplier=3
 
 
-for percent_mo in 100 #0.01 
+for percent in 100 
 do
 for pred_len in  96 
 do
@@ -42,15 +42,15 @@ mkdir -p logs/$model
 
 
 
-torchrun --nproc_per_node=4 --master_port=29519  train_TEMPO_parallel.py \
+torchrun --nproc_per_node=8 train_TEMPO_prob_parallel.py \
     --datasets monash \
     --eval_data monash \
     --target_data monash \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
-    --checkpoint ./checkpoints/ \
-    --model_id Gift_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent_mo'_%' \
+    --checkpoint ./checkpoints/Monash_prob \
+    --model_id Con1_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
     --seq_len $seq_len \
@@ -75,7 +75,7 @@ torchrun --nproc_per_node=4 --master_port=29519  train_TEMPO_parallel.py \
     --tmax $tmax \
     --cos 1 \
     --is_gpt 1 \
-    --percent_mo $percent_mo >> logs/$model/Gift_Monash'_'$seq_len'_'$pred_len'_lr'$lr'_percent_mo_'$percent_mo.log
+    --loss_func prob >> logs/$model/Prob_Monash'_'$seq_len'_'$pred_len'_lr'$lr.log
 
 
 done

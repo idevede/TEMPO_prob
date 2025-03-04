@@ -28,7 +28,9 @@ import random
 import sys
 
 from omegaconf import OmegaConf
+from torch.utils.data import IterableDataset, DataLoader
 
+# import torch.distributed as dist
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -77,7 +79,17 @@ def print_dataset_info(data, loader, name="Dataset"):
     #         print(f"\nFirst batch shape: {batch.shape if hasattr(batch, 'shape') else 'N/A'}")
     #     break
 
-def prepare_data_loaders(args, config):
+class FilteredStreamingDataset(IterableDataset):
+    def __init__(self, dataset, interval=100):
+        self.dataset = dataset
+        self.interval = interval
+
+    def __iter__(self):
+        for i, item in enumerate(self.dataset):
+            if i % self.interval == 0:
+                yield item
+
+def prepare_data_loaders(args, config, rank =0, world_size=1):
     """
     Prepare train, validation and test data loaders.
     
@@ -93,30 +105,24 @@ def prepare_data_loaders(args, config):
     val_datas = []
     min_sample_num = sys.maxsize
     
-    # First pass to get validation data and minimum sample number
-    for dataset_name in args.datasets.split(','):
-        _update_args_from_config(args, config, dataset_name)
-        
-        train_data, train_loader = data_provider(args, 'train')
-        if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash']:
-            min_sample_num = min(min_sample_num, len(train_data))
+    # 收集训练和验证数据集
+    train_datasets = args.datasets.split(',')
+    val_datasets = args.eval_data.split(',')
     
-    for dataset_name in args.eval_data.split(','):  
-        _update_args_from_config(args, config, dataset_name)  
-        val_data, val_loader = data_provider(args, 'val') 
-        val_datas.append(val_data)
-
-    # Second pass to prepare training data with proper sampling
-    for dataset_name in args.datasets.split(','):
+    # 处理训练数据集
+    for dataset_name in train_datasets:
         _update_args_from_config(args, config, dataset_name)
-        
         train_data, _ = data_provider(args, 'train')
         
-        if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash'] and args.equal == 1:
-            train_data = Subset(train_data, choice(len(train_data), min_sample_num))
+        # 计算最小样本数
+        if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash']:
+            min_sample_num = min(min_sample_num, len(train_data))
             
+        # 根据条件调整数据集大小
         if args.equal == 1:
-            if dataset_name == 'electricity' and args.electri_multiplier > 1:
+            if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash']:
+                train_data = Subset(train_data, choice(len(train_data), min_sample_num))
+            elif dataset_name == 'electricity' and args.electri_multiplier > 1:
                 train_data = Subset(train_data, choice(len(train_data), 
                                   int(min_sample_num * args.electri_multiplier)))
             elif dataset_name == 'traffic' and args.traffic_multiplier > 1:
@@ -125,28 +131,77 @@ def prepare_data_loaders(args, config):
                 
         train_datas.append(train_data)
 
-    # Combine datasets if multiple exist
-    if len(train_datas) > 1:
-        train_data = _combine_datasets(train_datas)
-        val_data = _combine_datasets(val_datas)
-        
-    train_sampler = DistributedSampler(train_data, shuffle=True, rank=dist.get_rank())
-    train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, 
-                             num_workers=args.num_workers, sampler=train_sampler)
+    # 处理验证数据集
+    for dataset_name in val_datasets:
+        _update_args_from_config(args, config, dataset_name)
+        val_data, _ = data_provider(args, 'val')
+        val_datas.append(val_data)
+
+    # 合并数据集
+    train_data = _combine_datasets(train_datas) if len(train_datas) > 1 else train_datas[0]
+    val_data = _combine_datasets(val_datas) if len(val_datas) > 1 else val_datas[0]
     
-    val_sampler = DistributedSampler(val_data, shuffle=False, rank=dist.get_rank())
-    val_loader = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size,
-                             num_workers=args.num_workers, sampler=val_sampler)
+    if dataset_name != 'monash':
+    # 创建数据加载器
+        train_sampler = DistributedSampler(train_data, shuffle=True, rank=dist.get_rank())
+        train_loader = torch.utils.data.DataLoader(
+            train_data, 
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            sampler=train_sampler
+        )
+        val_sampler = DistributedSampler(val_data, shuffle=False, rank=dist.get_rank())
+        val_loader = torch.utils.data.DataLoader(
+            val_data,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            sampler=val_sampler
+        )
+    else:
+        #from datasets import load_dataset, 
+        from accelerate.data_loader import IterableDatasetShard
+#IterableDatasetShard
+        # 使用 IterableDatasetShard 划分数据集
+        train_data = IterableDatasetShard(train_data, num_processes=int(world_size), process_index=int(rank))
+
+        # 创建 DataLoader
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, num_workers=args.num_workers)
+
+        # val_data = val_data.select(range(0, len(val_data), 10))  # 每10个样本取1个
+        # val_data = val_data.filter(lambda x, idx: idx % 100 == 0, with_indices=True)
+        val_data = FilteredStreamingDataset(val_data, interval=100)
+        val_data    = IterableDatasetShard(val_data, num_processes=int(world_size), process_index=int(rank))
+        val_loader  = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, num_workers=args.num_workers)
+        # train_loader = torch.utils.data.DataLoader(
+        #     train_data,
+        #     batch_size=None,  # batch在dataset中已处理
+        #     shuffle=False,    # 不需要shuffle
+        #     num_workers=4,    # 使用多个worker
+        #     pin_memory=True,  # 使用固定内存，加快GPU传输
+        # )
+        # val_loader = torch.utils.data.DataLoader(
+        #     val_data,
+        #     batch_size=None,  # batch在dataset中已处理
+        #     shuffle=False,    # 不需要shuffle
+        #     num_workers=4,    # 使用多个worker
+        #     pin_memory=True,  # 使用固定内存，加快GPU传输
+        # )
     
-    # Prepare test data
+    
+    
+    # 准备测试数据
     _update_args_from_config(args, config, args.target_data)
     test_data, test_loader = data_provider(args, 'test')
 
-    print_dataset_info(train_data, train_loader, "Training Dataset")
-    print_dataset_info(val_data, val_loader, "Validation Dataset")
-    print_dataset_info(test_data, test_loader, "Test Dataset")
+    # 打印数据集信息
+    # print_dataset_info(train_data, train_loader, "Training Dataset")
+    # print_dataset_info(val_data, val_loader, "Validation Dataset")
+    # print_dataset_info(test_data, test_loader, "Test Dataset")
     
-    return train_data, train_loader, test_data, test_loader, val_data, val_loader, train_sampler, val_sampler
+    if dataset_name == 'monash':
+        return train_data, train_loader, test_data, test_loader, val_data, val_loader, val_data, val_data
+    else:
+        return train_data, train_loader, test_data, test_loader, val_data, val_loader, train_sampler, val_sampler
 
 def _update_args_from_config(args, config, dataset_name):
     """Update args with dataset specific configurations"""
@@ -190,13 +245,32 @@ SEASONALITY_MAP = {
 # else:
 #     rank = 0
 
+
+def print_batch_info(batch_x, batch_y, seq_trend, seq_seasonal, seq_resid, epoch, batch_idx):
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    
+    if batch_idx == 0:  # 只打印每个 epoch 的第一个 batch
+        print(f"Rank {rank}/{world_size}, Epoch {epoch}:")
+        print(f"- batch_x shape: {batch_x.shape}")
+        print(f"- batch_y shape: {batch_y.shape}")
+        print(f"- seq_trend shape: {seq_trend.shape}")
+        print(f"- seq_seasonal shape: {seq_seasonal.shape}")
+        print(f"- seq_resid shape: {seq_resid.shape}")
+        # 打印一些数据样本的特征值，用于验证不同 GPU 的数据是否不同
+        print(f"- batch_x first value: {batch_x[0][0][0].item():.4f}")
+        print(f"- batch_y first value: {batch_y.mean().item():.4f}")
+
+
 def main(args, config):
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
     # Setup DDP:
+    import torch.distributed as dist
     dist.init_process_group(backend='nccl')
     assert args.batch_size % dist.get_world_size() == 0, f"Batch size must be divisible by world size."
     rank = dist.get_rank()
+    world_size = dist.get_world_size()
     device = rank % torch.cuda.device_count()
     print("rank: ", rank)
     torch.cuda.set_device(device)
@@ -238,18 +312,23 @@ def main(args, config):
         else:
             model = GPT4TS(args, device)
         # mse, mae = test(model, test_data, test_loader, args, device, ii)
-        # model.to(device)
-        # last_path = 'checkpoints/Monash_1/Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
-        # best_model_path = os.path.join(last_path, 'checkpoint.pth')
-        model.load_state_dict(torch.load(best_model_path), strict=False)
+        model.to(device)
+        try:
+            # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            # last_path = 'checkpoints/Con2_Monash_TEMPO_6_prompt_learn_336_96_100/Con2_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            # best_model_path = os.path.join(last_path, 'checkpoint.pth')
+            model.load_state_dict(torch.load(best_model_path), strict=False)
+            print('Pretrain model loaded successfully!')
+        except:
+            print('No pretrain model, train from scratch!')
         model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
         params = model.parameters()
         print('Model loaded successfully!')
         # Load the data
-        train_data, train_loader, test_data, test_loader, vali_data, vali_loader, train_sampler, val_sampler = prepare_data_loaders(args, config)
+        train_data, train_loader, test_data, test_loader, vali_data, vali_loader, train_sampler, val_sampler = prepare_data_loaders(args, config, rank, world_size)
         print("Data loaded successfully!")
         
-        train_steps = len(train_loader) #190470 -52696
+        train_steps = 10000 # estimate #len(train_data) #100000 #len(train_loader) #190470 -52696
 
         # Assuming you have 4 GPUs
         num_gpus = torch.cuda.device_count()
@@ -318,22 +397,42 @@ def main(args, config):
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
 
         for epoch in range(args.train_epochs):
-            train_sampler.set_epoch(epoch)
+            # train_sampler.set_epoch(epoch)
 
             iter_count = 0
             train_loss = []
             epoch_time = time.time()
-            for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) in tqdm(enumerate(train_loader),total = len(train_loader)):
-                
-                adjust_learning_rate(model_optim, epoch, i, len(train_loader))
+            for i, data in tqdm(enumerate(train_loader)):
+                if len(data) == 7:
+                    (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) = data
+                else:
+                    # import pdb; pdb.set_trace()
+                    batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1)).transpose(0, 1)
+                    batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1)).transpose(0, 1)
+                    seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1)).transpose(0, 1)
+                    seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1)).transpose(0, 1)
+                    seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1)).transpose(0, 1)
+                    
+                    # (batch_x, batch_y, seq_trend, seq_seasonal, seq_resid) = data
+                # if epoch == 0 and i == 0:
+                #     num_batches = sum(1 for _ in train_loader)
+                #     print("num_batches: ", num_batches)
+                # else:
+                #     adjust_learning_rate(model_optim, epoch, i, num_batches)
+
+                # adjust_learning_rate(model_optim, epoch, i, len(train_loader))
+
+                print_batch_info(batch_x, batch_y, seq_trend, seq_seasonal, seq_resid, epoch, i)
+
                 
                 iter_count += 1
                 model_optim.zero_grad()
                 batch_x = batch_x.float().to(device)
 
                 batch_y = batch_y.float().to(device)
-                batch_x_mark = batch_x_mark.float().to(device)
-                batch_y_mark = batch_y_mark.float().to(device)
+                if len(data) == 7:
+                    batch_x_mark = batch_x_mark.float().to(device)
+                    batch_y_mark = batch_y_mark.float().to(device)
 
                 seq_trend = seq_trend.float().to(device)
                 seq_seasonal = seq_seasonal.float().to(device)

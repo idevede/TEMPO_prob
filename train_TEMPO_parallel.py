@@ -57,6 +57,37 @@ torch.manual_seed(fix_seed)
 np.random.seed(fix_seed)
 
 
+def subsample_dataset(dataset, percentage):
+    """
+    从数据集中采样指定百分比的数据
+    
+    参数:
+        dataset: 原始数据集
+        percentage: 采样百分比 (0-100)
+    
+    返回:
+        采样后的数据集
+    """
+    if not hasattr(dataset, '__len__'):
+        # 对于IterableDataset，我们可以使用一个过滤器包装器
+        class SubsampledIterableDataset(torch.utils.data.IterableDataset):
+            def __init__(self, dataset, percentage):
+                super().__init__()
+                self.dataset = dataset
+                self.percentage = percentage / 100.0
+            
+            def __iter__(self):
+                for item in self.dataset:
+                    if random.random() < self.percentage:
+                        yield item
+        
+        return SubsampledIterableDataset(dataset, percentage)
+    else:
+        # 对于MapDataset，我们可以使用random.sample进行子采样
+        n = len(dataset)
+        indices = random.sample(range(n), int(n * percentage / 100))
+        return torch.utils.data.Subset(dataset, indices)
+    
 def print_dataset_info(data, loader, name="Dataset"):
     print(f"\n=== {name} Information ===")
     print(f"Number of samples: {len(data)}")
@@ -161,6 +192,23 @@ def prepare_data_loaders(args, config, rank =0, world_size=1):
         from accelerate.data_loader import IterableDatasetShard
 #IterableDatasetShard
         # 使用 IterableDatasetShard 划分数据集
+        # import pdb; pdb.set_trace()
+        # 使用示例 - 取1%数据
+        if args.percent_mo == 1:
+            print(f"使用1%的训练数据")
+            # log.info("Using 1% of the training data")
+            train_data = FilteredStreamingDataset(train_data, interval=100)
+        # 使用示例 - 取5%数据
+        elif args.percent_mo == 5:
+            print(f"使用5%的训练数据")
+            train_data = FilteredStreamingDataset(train_data, interval=20)
+
+            # log.info("Using 5% of the training data")
+        else:
+            print(f"使用{args.percent_mo}%的训练数据")
+            train_data = FilteredStreamingDataset(train_data, interval=int(100/args.percent_mo))
+        print(args.percent_mo)
+        # import pdb; pdb.set_trace()
         train_data = IterableDatasetShard(train_data, num_processes=int(world_size), process_index=int(rank))
 
         # 创建 DataLoader
@@ -168,7 +216,7 @@ def prepare_data_loaders(args, config, rank =0, world_size=1):
 
         # val_data = val_data.select(range(0, len(val_data), 10))  # 每10个样本取1个
         # val_data = val_data.filter(lambda x, idx: idx % 100 == 0, with_indices=True)
-        val_data = FilteredStreamingDataset(val_data, interval=100)
+        val_data = FilteredStreamingDataset(val_data, interval=1000)
         val_data    = IterableDatasetShard(val_data, num_processes=int(world_size), process_index=int(rank))
         val_loader  = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, num_workers=args.num_workers)
         # train_loader = torch.utils.data.DataLoader(
@@ -294,14 +342,16 @@ def main(args, config):
             model = GPT4TS(args, device)
         # mse, mae = test(model, test_data, test_loader, args, device, ii)
         model.to(device)
-        try:
-            # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
-            last_path = 'checkpoints/Con2_Monash_TEMPO_6_prompt_learn_336_96_100/Con2_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
-            best_model_path = os.path.join(last_path, 'checkpoint.pth')
-            model.load_state_dict(torch.load(best_model_path), strict=False)
-            print('Pretrain model loaded successfully!')
-        except:
-            print('No pretrain model, train from scratch!')
+
+        # try:
+        #     # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+        #     last_path = 'checkpoints/Con2_Monash_TEMPO_6_prompt_learn_336_96_100/Con2_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+        #     best_model_path = os.path.join(last_path, 'checkpoint.pth')
+        #     model.load_state_dict(torch.load(best_model_path), strict=False)
+        #     print('Pretrain model loaded successfully!')
+        # except:
+        #     print('No pretrain model, train from scratch!')
+
         model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
         params = model.parameters()
         # print('Model loaded successfully!')
@@ -377,8 +427,8 @@ def main(args, config):
                 model_optim.zero_grad()
                 # import pdb; pdb.set_trace()
                 batch_x = batch_x.float().to(device)
-
-                batch_y = batch_y.float().to(device)
+                # import pdb; pdb.set_trace()
+                batch_y = batch_y.float().to(device)[:,:args.pred_len,:]
                 if len(data) == 7:
                     batch_x_mark = batch_x_mark.float().to(device)
                     batch_y_mark = batch_y_mark.float().to(device)
@@ -513,6 +563,8 @@ if __name__ == '__main__':
     parser.add_argument('--electri_multiplier', type=int, default=1)
     parser.add_argument('--traffic_multiplier', type=int, default=1)
     parser.add_argument('--embed', type=str, default='timeF')
+    # args.percent
+    parser.add_argument('--percent_mo', type=float, default=100)
 
     
 
