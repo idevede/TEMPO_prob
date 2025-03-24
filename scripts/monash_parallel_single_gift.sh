@@ -13,7 +13,7 @@
 #SBATCH --no-requeue
 #SBATCH -t 12:00:00              # To enable the use of up to 8 GPUs          # To enable the use of up to 8 GPUs
 
-export CUDA_VISIBLE_DEVICES=1,5 #1 #4,5,6,7 #6,7 #4,5 #0,1,2,3 #6,7 #4,5 #0,1,2,3 #,4,5,6,7 #4,5,6,7 #0 #,1 0,1,2,3 #
+export CUDA_VISIBLE_DEVICES=0 #1 #4,5,6,7 #6,7 #4,5 #0,1,2,3 #6,7 #4,5 #0,1,2,3 #,4,5,6,7 #4,5,6,7 #0 #,1 0,1,2,3 #
 
 seq_len=336
 model=TEMPO #TEMPO #PatchTST #_multi
@@ -21,7 +21,7 @@ electri_multiplier=3 # 3 times more data than the other small samples.
 traffic_multiplier=3
 
 
-for data_name in jena_weather_H_short #electricity_H_short
+for data_name in electricity_H_short #jena_weather_H_short #electricity_H_short
 do
 for percent_mo in 100 #0.01 
 do
@@ -44,7 +44,7 @@ mkdir -p logs/$model
 
 
 
-torchrun --nproc_per_node=2 --master_port=29523  train_TEMPO_parallel_single_data.py \
+torchrun --nproc_per_node=1 --master_port=29524  train_TEMPO_parallel_single_data.py \
     --datasets $data_name \
     --eval_data $data_name \
     --target_data $data_name \
@@ -61,7 +61,7 @@ torchrun --nproc_per_node=2 --master_port=29523  train_TEMPO_parallel_single_dat
     --prompt $prompt\
     --batch_size 128 \
     --learning_rate $lr \
-    --train_epochs 100 \
+    --train_epochs 10 \
     --decay_fac 0.5 \
     --d_model 768 \
     --n_heads 4 \

@@ -103,6 +103,55 @@ period_map = {
     'electricity/W': 52
 }
 
+
+def fill_nan_with_mean(tar):
+    """
+    使用平均值填充 NumPy 数组中的 NaN 值。
+    如果某列全是 NaN，则填充为 0。
+    
+    参数:
+        tar: NumPy 数组，可以是一维或二维
+        
+    返回:
+        填充 NaN 后的数组
+    """
+    if np.isnan(tar).any():
+        # 创建副本以避免修改原始数据
+        filled_tar = tar.copy()
+        
+        # 如果是一维数组
+        if len(tar.shape) == 1:
+            # 计算非 NaN 值的平均值
+            mean_val = np.nanmean(tar)
+            
+            # 如果全是 NaN，设置平均值为 0
+            if np.isnan(mean_val):
+                mean_val = 0
+                
+            # 填充 NaN 值
+            filled_tar[np.isnan(tar)] = mean_val
+            
+        # 如果是二维数组
+        elif len(tar.shape) == 2:
+            # 对每一列分别计算平均值并填充
+            for col in range(tar.shape[1]):
+                col_data = tar[:, col]
+                
+                # 计算该列的非 NaN 值的平均值
+                mean_val = np.nanmean(col_data)
+                
+                # 如果该列全是 NaN，设置平均值为 0
+                if np.isnan(mean_val):
+                    mean_val = 0
+                    
+                # 填充该列的 NaN 值
+                filled_tar[np.isnan(tar[:, col]), col] = mean_val
+        
+        return filled_tar
+    
+    # 如果没有 NaN 值，直接返回原数组
+    return tar
+
 class Dataset_GIFT(Dataset):
     def __init__(self, data_name='custom', seq_len=96, label_len=48, pred_len=96, 
                  features='S', target='OT', scale=True, timeenc=0, freq='h',
@@ -160,6 +209,11 @@ class Dataset_GIFT(Dataset):
         # first_entry = next(iter(self.original_dataset))
         # import pdb; pdb.set_trace()
         for data_entry in self.original_dataset.input:
+            target = data_entry.get('target')
+            item_id = data_entry.get('item_id', None)
+            print(f"Processing item {item_id}, target shape: {target.shape}")
+
+        for data_entry in self.original_dataset.input:
             # 提取必要数据
             # import pdb; pdb.set_trace()
             target = data_entry.get('target')
@@ -167,15 +221,20 @@ class Dataset_GIFT(Dataset):
             start_date = data_entry.get('start', None)
             try:
                 if not isinstance(target, np.ndarray):
-                        target = np.array(target)
+                    target = np.array(target)
             except:
-                import pdb; pdb.set_trace()
+                # import pdb; pdb.set_trace()
                 target = np.array(target)
             if len(target.shape) == 1:
                 # 确保 target 是 numpy 数组
                 if not isinstance(target, np.ndarray):
                     target = np.array(target)
-                
+                if np.isnan(target).any():
+                    print(f"Warning: NAN detected in target in item {item_id}, skipping")
+                    # target = fill_nan_with_mean(target)
+                    mean_val = np.nanmean(target) if not np.isnan(np.nanmean(target)) else 0
+                    np.where(np.isnan(target), mean_val, target)
+                    # continue
                 # 对数据进行标准化
                 if self.scale:
                     if len(target.shape) == 1:
@@ -191,7 +250,7 @@ class Dataset_GIFT(Dataset):
 
                 df = pd.DataFrame({
                     'date': pd.date_range(start='2020-01-01', periods=len(target), freq=self.freq),
-                    'value': normalized_data
+                    'value': normalized_data.flatten()
                 })
                 
                 # 进行STL分解
@@ -210,7 +269,7 @@ class Dataset_GIFT(Dataset):
                     print(f"警告: 序列 {item_id} 长度({total_length})小于所需的序列长度({self.seq_len + self.pred_len})，将跳过")
                     continue
                 # 创建滑动窗口样本
-                for i in range(total_length - self.seq_len - self.pred_len + 1):
+                for i in range(0, total_length - self.seq_len - self.pred_len + 1, self.pred_len):
                     s_begin = i
                     s_end = s_begin + self.seq_len
                     r_begin = s_end 
@@ -241,6 +300,8 @@ class Dataset_GIFT(Dataset):
                     }
                     
                     self.samples.append(sample)
+                    # if len(self.samples)>1000:
+                    #         break
                 
             # import pdb; pdb.set_trace()
             # # 创建日期索引（如果提供了开始日期）
@@ -263,7 +324,13 @@ class Dataset_GIFT(Dataset):
             else:
                 for j in range(len(target)):
                     tar = target[j]
-                    print("Processing the {}th target".format(j))
+                    # if NAN
+                    if np.isnan(tar).any():
+                        print(f"Warning: NAN detected in target {j} in item {item_id}, skipping")
+                        mean_val = np.nanmean(tar) if not np.isnan(np.nanmean(tar)) else 0
+                        np.where(np.isnan(tar), mean_val, tar)
+                        # continue
+                    # print("Processing the {}th target".format(j))
                     # 对数据进行标准化
                     if self.scale:
                         if len(tar.shape) == 1:
@@ -298,7 +365,7 @@ class Dataset_GIFT(Dataset):
                         print(f"警告: 序列 {item_id} 长度({total_length})小于所需的序列长度({self.seq_len + self.pred_len})，将跳过")
                         continue
                     # 创建滑动窗口样本
-                    for i in range(total_length - self.seq_len - self.pred_len + 1):
+                    for i in range(0, total_length - self.seq_len - self.pred_len + 1, self.pred_len):
                         s_begin = i
                         s_end = s_begin + self.seq_len
                         r_begin = s_end 
@@ -329,10 +396,13 @@ class Dataset_GIFT(Dataset):
                         }
                         
                         self.samples.append(sample)
-            if len(self.samples)>1000:
-                break
+                        # if len(self.samples)>1000:
+                        #     break
+            # if len(self.samples)>1000:
+            #     break
                 
             # self.data_entries.append(processed_entry)
+            print(f"Processed with {len(self.samples)} samples")
 
         
     def stl_resolve(self, series, dataset_name):

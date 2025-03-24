@@ -341,12 +341,12 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
         for i, data in tqdm(enumerate(vali_loader)):
 
             
-
+            # import pdb; pdb.set_trace()
             if len(data) == 7:
                 (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) = data
                 batch_x_mark = batch_x_mark.float().to(device)
                 batch_y_mark = batch_y_mark.float().to(device)
-            if len(data) == 4:
+            elif len(data) == 4:
                 batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
                 batch_x_mark = batch_x_mark.float().to(device)
                 batch_y_mark = batch_y_mark.float().to(device)
@@ -445,7 +445,7 @@ def test(model, test_data, test_loader, args, device, itr):
                 (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) = data
                 batch_x_mark = batch_x_mark.float().to(device)
                 batch_y_mark = batch_y_mark.float().to(device)
-            if len(data) == 4:
+            elif len(data) == 4:
                 batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
                 batch_x_mark = batch_x_mark.float().to(device)
                 batch_y_mark = batch_y_mark.float().to(device)
