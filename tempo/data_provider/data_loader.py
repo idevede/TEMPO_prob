@@ -14,10 +14,373 @@ from statsmodels.tsa.seasonal import STL
 # import mmap
 from typing import List, Tuple, Dict, Optional
 import json
-
+from tempo.gift_src.gift_eval.data import Dataset as Dataset_gift
 warnings.filterwarnings('ignore')
 
 stl_position = 'stl/'
+
+period_map = {
+
+    # # Jena Weather
+    'jena_weather/10T': 144,  # 10分钟数据，一天144个点
+    'jena_weather/H': 24,
+    'jena_weather/D': 30,
+    
+    # BizITObs
+    'bizitobs_application': 360,  # 10秒数据，一小时360个点
+    'bizitobs_service': 360,
+    'bizitobs_l2c/5T': 288,   # 5分钟数据，一天288个点
+    'bizitobs_l2c/H': 24,
+    
+    # # Bitbrains
+    'bitbrains_fast_storage/5T': 288,
+    'bitbrains_fast_storage/H': 24,
+    'bitbrains_rnd/5T': 288,
+    'bitbrains_rnd/H': 24,
+    
+    # Restaurant
+    'restaurant/D': 7,
+    
+    # ETT
+    'ett1/15T': 96,
+    'ett1/H': 24,
+    'ett1/D': 30,
+    'ett1/W': 52,
+    'ett2/15T': 96,
+    'ett2/H': 24,
+    'ett2/D': 30,
+    'ett2/W': 52,
+    
+    # Transport -24 done
+    'LOOP_SEATTLE/5T': 288,
+    'LOOP_SEATTLE/H': 24,
+    'LOOP_SEATTLE/D': 7,
+    'SZ_TAXI/15T': 96,
+    'SZ_TAXI/H': 24,
+    'M_DENSE/H': 24,
+    'M_DENSE/D': 30,
+    
+    # Solar
+    'solar/10T': 144,
+    'solar/H': 24,
+    'solar/D': 30,
+    'solar/W': 52,
+    
+    # Sales
+    'hierarchical_sales/D': 7,
+    'hierarchical_sales/W': 52,
+    
+    # M4
+    'm4_yearly': 2,
+    'm4_quarterly': 4,
+    'm4_monthly': 12,
+    'm4_weekly': 52,
+    'm4_daily': 7,
+    'm4_hourly': 24,
+    
+    # Healthcare
+    'hospital': 12,
+    'covid_deaths': 7,
+    'us_births/D': 30,
+    'us_births/W': 52,
+    'us_births/M': 12,
+    
+    # Nature
+    'saugeenday/D': 30,
+    'saugeenday/W': 52,
+    'saugeenday/M': 12,
+    'temperature_rain_with_missing': 30,
+    'kdd_cup_2018/H': 24,
+    'kdd_cup_2018/D': 30,
+    
+    #Sales
+    'car_parts_with_missing': 12,
+    
+    # Electricity
+    'electricity/15T': 96,
+    'electricity/H': 24,
+    'electricity/D': 30,
+    'electricity/W': 52
+}
+
+class Dataset_GIFT(Dataset):
+    def __init__(self, data_name='custom', seq_len=96, label_len=48, pred_len=96, 
+                 features='S', target='OT', scale=True, timeenc=0, freq='h',
+                 stl_position='./stl_data/', flag='train', term = 'short'):
+        """
+        初始化分解数据集
+        Args:
+            original_dataset: 原始数据集
+            seq_len: 输入序列长度
+            label_len: 标签长度
+            pred_len: 预测长度
+            features: 特征类型 ('S': 单变量, 'M': 多变量)
+            target: 目标变量名称
+            scale: 是否进行数据标准化
+            timeenc: 时间编码方式
+            freq: 数据频率
+            data_name: 数据名称，用于STL分解文件存储
+            stl_position: STL分解结果存储位置
+        """
+        # self.original_dataset = original_dataset
+        # import pdb; pdb.set_trace()
+        self.data_name = data_name
+        self.term = term
+        self.original_dataset = Dataset_gift(name=self.data_name, term=self.term, to_univariate=False)
+        # self.train_data = self.original_dataset.training_dataset
+        self.seq_len = seq_len
+        self.label_len = label_len
+        self.pred_len = pred_len
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+       
+        self.stl_position = stl_position
+        if flag == 'train':
+            self.original_dataset = self.original_dataset.training_dataset
+        elif flag == 'test':
+            self.original_dataset = self.original_dataset.test_data
+        else:
+            self.original_dataset = self.original_dataset.validation_dataset
+        
+        # 处理数据
+        self.__process_data__()
+
+    def __process_data__(self):
+        """处理原始数据集，进行标准化和分解"""
+        self.data_entries = []
+        self.scaler = StandardScaler()
+        self.samples = []  # 存储所有滑动窗口样本
+        
+        
+        # 遍历原始数据集
+        
+        # first_entry = next(iter(self.original_dataset))
+        # import pdb; pdb.set_trace()
+        for data_entry in self.original_dataset.input:
+            # 提取必要数据
+            # import pdb; pdb.set_trace()
+            target = data_entry.get('target')
+            item_id = data_entry.get('item_id', None)
+            start_date = data_entry.get('start', None)
+            try:
+                if not isinstance(target, np.ndarray):
+                        target = np.array(target)
+            except:
+                import pdb; pdb.set_trace()
+                target = np.array(target)
+            if len(target.shape) == 1:
+                # 确保 target 是 numpy 数组
+                if not isinstance(target, np.ndarray):
+                    target = np.array(target)
+                
+                # 对数据进行标准化
+                if self.scale:
+                    if len(target.shape) == 1:
+                        target = target.reshape(-1, 1)
+                    
+                    # 使用整个序列进行拟合，模拟训练集
+                    self.scaler.fit(target)
+                    normalized_data = self.scaler.transform(target)
+                else:
+                    normalized_data = target
+                    if len(normalized_data.shape) == 1:
+                        normalized_data = normalized_data.reshape(-1, 1)
+
+                df = pd.DataFrame({
+                    'date': pd.date_range(start='2020-01-01', periods=len(target), freq=self.freq),
+                    'value': normalized_data
+                })
+                
+                # 进行STL分解
+                trend, seasonal, resid = self.stl_resolve(df, item_id or self.data_name)
+            
+                
+
+                # 将数据转换为PyTorch张量
+                data_tensor = torch.tensor(normalized_data, dtype=torch.float32)
+
+                # 使用滑动窗口创建样本
+                total_length = len(data_tensor)
+                
+                # 确保数据长度足够
+                if total_length < self.seq_len + self.pred_len:
+                    print(f"警告: 序列 {item_id} 长度({total_length})小于所需的序列长度({self.seq_len + self.pred_len})，将跳过")
+                    continue
+                # 创建滑动窗口样本
+                for i in range(total_length - self.seq_len - self.pred_len + 1):
+                    s_begin = i
+                    s_end = s_begin + self.seq_len
+                    r_begin = s_end 
+                    r_end = r_begin  + self.pred_len
+                    
+                    # 准备输入输出序列
+                    seq_x = data_tensor[s_begin:s_end]
+                    seq_y = data_tensor[r_begin:r_end]
+                    
+                    # 准备分解后的序列
+                    seq_trend = trend[s_begin:s_end]
+                    seq_seasonal = seasonal[s_begin:s_end]
+                    seq_resid = resid[s_begin:s_end]
+                    
+                    # 准备时间特征
+                    seq_x_mark = seq_x #time_features[s_begin:s_end]
+                    seq_y_mark = seq_y #time_features[r_begin:r_end]
+                    
+                    sample = {
+                        'seq_x': seq_x,
+                        'seq_y': seq_y,
+                        'seq_x_mark': seq_x_mark,
+                        'seq_y_mark': seq_y_mark,
+                        'seq_trend': seq_trend,
+                        'seq_seasonal': seq_seasonal,
+                        'seq_resid': seq_resid,
+                    
+                    }
+                    
+                    self.samples.append(sample)
+                
+            # import pdb; pdb.set_trace()
+            # # 创建日期索引（如果提供了开始日期）
+            # if start_date is not None:
+            #     if isinstance(start_date, str):
+            #         start_date = pd.to_datetime(start_date)
+                
+            #     date_range = pd.date_range(start=start_date, periods=len(target), freq=self.freq)
+                
+            #     # 创建带日期的DataFrame用于STL分解
+            #     df = pd.DataFrame({
+            #         'date': date_range,
+            #         'value': normalized_data.flatten()
+            #     })
+                
+            #     # # 进行STL分解
+            #     # trend, seasonal, resid = self.stl_resolve(df, item_id or self.data_name)
+            # else:
+            # 如果没有日期信息，创建简单的索引
+            else:
+                for j in range(len(target)):
+                    tar = target[j]
+                    print("Processing the {}th target".format(j))
+                    # 对数据进行标准化
+                    if self.scale:
+                        if len(tar.shape) == 1:
+                            tar = tar.reshape(-1, 1)
+                        
+                        # 使用整个序列进行拟合，模拟训练集
+                        self.scaler.fit(tar)
+                        normalized_data = self.scaler.transform(tar)
+                    else:
+                        normalized_data = tar
+                        if len(normalized_data.shape) == 1:
+                            normalized_data = normalized_data.reshape(-1, 1)
+                    # import pdb; pdb.set_trace()
+                    df = pd.DataFrame({
+                        'date': pd.date_range(start='2020-01-01', periods=len(normalized_data.flatten()), freq=self.freq),
+                        'value': normalized_data.flatten()
+                    })
+                    
+                    # 进行STL分解
+                    trend, seasonal, resid = self.stl_resolve(df, item_id or self.data_name)
+                
+                    
+
+                    # 将数据转换为PyTorch张量
+                    data_tensor = torch.tensor(normalized_data, dtype=torch.float32)
+
+                    # 使用滑动窗口创建样本
+                    total_length = len(data_tensor)
+                    
+                    # 确保数据长度足够
+                    if total_length < self.seq_len + self.pred_len:
+                        print(f"警告: 序列 {item_id} 长度({total_length})小于所需的序列长度({self.seq_len + self.pred_len})，将跳过")
+                        continue
+                    # 创建滑动窗口样本
+                    for i in range(total_length - self.seq_len - self.pred_len + 1):
+                        s_begin = i
+                        s_end = s_begin + self.seq_len
+                        r_begin = s_end 
+                        r_end = r_begin  + self.pred_len
+                        
+                        # 准备输入输出序列
+                        seq_x = data_tensor[s_begin:s_end].reshape(-1, 1)
+                        seq_y = data_tensor[r_begin:r_end].reshape(-1, 1)
+                        
+                        # 准备分解后的序列
+                        seq_trend = trend[s_begin:s_end]
+                        seq_seasonal = seasonal[s_begin:s_end]
+                        seq_resid = resid[s_begin:s_end]
+                        
+                        # 准备时间特征
+                        seq_x_mark = seq_x #time_features[s_begin:s_end]
+                        seq_y_mark = seq_y #time_features[r_begin:r_end]
+                        
+                        sample = {
+                            'seq_x': seq_x,
+                            'seq_y': seq_y,
+                            'seq_x_mark': seq_x_mark,
+                            'seq_y_mark': seq_y_mark,
+                            'seq_trend': seq_trend,
+                            'seq_seasonal': seq_seasonal,
+                            'seq_resid': seq_resid,
+                        
+                        }
+                        
+                        self.samples.append(sample)
+            if len(self.samples)>1000:
+                break
+                
+            # self.data_entries.append(processed_entry)
+
+        
+    def stl_resolve(self, series, dataset_name):
+        period = period_map.get(dataset_name, 24)
+        stl = STL(series['value'], period=period)
+        res = stl.fit()
+        trend_stamp = torch.tensor(res.trend.values, dtype=torch.float32).reshape(-1, 1)
+        seasonal_stamp = torch.tensor(res.seasonal.values, dtype=torch.float32).reshape(-1, 1)
+        resid_stamp = torch.tensor(res.resid.values, dtype=torch.float32).reshape(-1, 1)
+        return trend_stamp, seasonal_stamp, resid_stamp
+
+    def __len__(self):
+        """返回数据集中样本的数量"""
+        return len(self.samples)
+    
+    def __getitem__(self, index):
+        """获取指定索引的样本"""
+        sample = self.samples[index]
+        
+        return (
+            sample['seq_x'],
+            sample['seq_y'],
+            sample['seq_x_mark'],
+            sample['seq_y_mark'],
+            sample['seq_trend'],
+            sample['seq_seasonal'],
+            sample['seq_resid']
+        )
+    
+    def inverse_transform(self, data, sample_idx=None):
+        """
+        反向转换标准化的数据
+        Args:
+            data: 需要反向转换的数据
+            sample_idx: 样本索引，用于确定使用哪个标准化器
+        """
+        if sample_idx is not None:
+            scaler_idx = self.samples[sample_idx]['scaler_idx']
+            return self.scalers[scaler_idx].inverse_transform(data)
+        else:
+            # 如果没有提供样本索引，尝试找到第一个标准化器
+            if self.scalers:
+                return self.scalers[0].inverse_transform(data)
+            else:
+                return data  # 没有标准化器，直接返回数据
+
+
+
 
 class Dataset_Monash(Dataset):
     def __init__(self, 

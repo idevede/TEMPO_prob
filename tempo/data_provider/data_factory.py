@@ -1,4 +1,5 @@
-from tempo.data_provider.data_loader import Dataset_Custom, Dataset_Pred, Dataset_TSF, Dataset_ETT_hour, Dataset_ETT_minute
+from tempo.data_provider.data_loader import Dataset_Custom, Dataset_Pred, Dataset_TSF, \
+    Dataset_ETT_hour, Dataset_ETT_minute, Dataset_GIFT
 from tempo.data_provider.data_loader_monash import Dataset_Monash
 from torch.utils.data import DataLoader
 from tempo.data_provider.data_loader_monash_stream import StreamingMonashDataset
@@ -10,6 +11,7 @@ data_dict = {
     'ett_h': Dataset_ETT_hour,
     'ett_m': Dataset_ETT_minute,
     'monash': StreamingMonashDataset,
+    'gift': Dataset_GIFT
 }
 
 import os
@@ -45,7 +47,56 @@ def get_dataset_dirs(base_path: str):
 
 def data_provider(args, flag, drop_last_test=True, train_all=False):
     Data = data_dict[args.data]
-    if args.data == 'monash':
+    if args.data == 'gift':
+        if flag == 'test':
+            shuffle_flag = False
+            drop_last = drop_last_test
+            batch_size = args.batch_size
+            freq = args.freq
+        elif flag == 'pred':
+            shuffle_flag = False
+            drop_last = False
+            batch_size = args.batch_size
+            freq = args.freq
+            Data = Dataset_Pred
+        elif flag == 'val':
+            shuffle_flag = True
+            drop_last = drop_last_test
+            batch_size = args.batch_size
+            freq = args.freq
+        else:
+            shuffle_flag = True
+            drop_last = True
+            batch_size = args.batch_size
+            freq = args.freq
+        # data_name='custom', seq_len=96, label_len=48, pred_len=96, 
+        #         features='S', target='OT', scale=True, timeenc=0, freq='h',
+        #         stl_position='./stl_data/', flag='train', term = 'short'
+        data_set = Data(
+            data_name = args.data_name,
+            term=args.root_path,
+            # data_path=args.data_path,
+            flag=flag,
+            seq_len = args.seq_len,
+            label_len = args.label_len,
+            pred_len = args.pred_len,
+            # size=[args.seq_len, args.label_len, args.pred_len],
+            features=args.features,
+            target=args.target,
+            timeenc=0,
+            freq=args.freq,
+            # percent=args.percent,
+            # max_len=args.max_len,
+        )
+        data_loader = DataLoader(
+            data_set,
+            batch_size=args.batch_size,
+            shuffle=shuffle_flag,
+            num_workers=args.num_workers,
+            drop_last=drop_last_test)
+        return data_set, data_loader
+    
+    elif args.data == 'monash':
          # 定义数据目录
         # root_dirs = get_dataset_dirs("./dataset/chronos_ready")
         # root_dirs = get_dataset_dirs("./dataset/chronos_arrow")
