@@ -240,25 +240,19 @@ class Dataset_GIFT(Dataset):
                     mean_val = np.nanmean(target) if not np.isnan(np.nanmean(target)) else 0
                     np.where(np.isnan(target), mean_val, target)
                     # continue
+                df = pd.DataFrame({
+                        'date': pd.date_range(start='2020-01-01', periods=len(target.flatten()), freq=self.freq),
+                        'value': target.flatten()
+                    })
+                df['value'] = df['value'].fillna(method='ffill')
+                df['value'] = df['value'].fillna(method='bfill')
                 # 对数据进行标准化
                 if self.scale:
-                    if len(target.shape) == 1:
-                        target = target.reshape(-1, 1)
-                    
-                    # 使用整个序列进行拟合，模拟训练集
-                    self.scaler.fit(target)
-                    normalized_data = self.scaler.transform(target)
-                else:
-                    normalized_data = target
-                    if len(normalized_data.shape) == 1:
-                        normalized_data = normalized_data.reshape(-1, 1)
+                    # if len(tar.shape) == 1:
+                    #     tar = tar.reshape(-1, 1)
 
-                df = pd.DataFrame({
-                    'date': pd.date_range(start='2020-01-01', periods=len(target), freq=self.freq),
-                    'value': normalized_data.flatten()
-                })
-                
-                # 进行STL分解
+                    df['value'] = self.scaler.fit_transform(df[['value']])
+
                 trend, seasonal, resid = self.stl_resolve(df, item_id or self.data_name)
             
                 
@@ -340,25 +334,32 @@ class Dataset_GIFT(Dataset):
                         np.where(np.isnan(tar), mean_val, tar)
                         # continue
                     # print("Processing the {}th target".format(j))
+                    df = pd.DataFrame({
+                        'date': pd.date_range(start='2020-01-01', periods=len(tar.flatten()), freq=self.freq),
+                        'value': tar.flatten()
+                    })
+                    df['value'] = df['value'].fillna(method='ffill')
+                    df['value'] = df['value'].fillna(method='bfill')
                     # 对数据进行标准化
                     if self.scale:
-                        if len(tar.shape) == 1:
-                            tar = tar.reshape(-1, 1)
+                        # if len(tar.shape) == 1:
+                        #     tar = tar.reshape(-1, 1)
+
+                        df['value'] = self.scaler.fit_transform(df[['value']])
                         
-                        # 使用整个序列进行拟合，模拟训练集
-                        self.scaler.fit(tar)
-                        normalized_data = self.scaler.transform(tar)
-                    else:
-                        normalized_data = tar
-                        if len(normalized_data.shape) == 1:
-                            normalized_data = normalized_data.reshape(-1, 1)
-                    # import pdb; pdb.set_trace()
-                    df = pd.DataFrame({
-                        'date': pd.date_range(start='2020-01-01', periods=len(normalized_data.flatten()), freq=self.freq),
-                        'value': normalized_data.flatten()
-                    })
+                        # # 使用整个序列进行拟合，模拟训练集
+                        # self.scaler.fit(tar)
+                        # normalized_data = self.scaler.transform(tar)
+                    # else:
+                    #     normalized_data = tar
+                    #     if len(normalized_data.shape) == 1:
+                    #         normalized_data = normalized_data.reshape(-1, 1)
+                    
+                    
                     
                     # 进行STL分解
+                    # import pdb; pdb.set_trace()
+
                     trend, seasonal, resid = self.stl_resolve(df, item_id or self.data_name)
                 
                     
