@@ -42,14 +42,14 @@ mkdir -p logs/$model
 
 
 
-torchrun --nproc_per_node=4 --master_port=29521  train_TEMPO_parallel.py \
+torchrun --nproc_per_node=4 --master_port=29522  train_TEMPO_prob_parallel_gift.py \
     --datasets monash \
     --eval_data monash \
     --target_data monash \
     --config_path ./configs/multiple_datasets.yml \
     --stl_weight 0.001 \
     --equal $equal \
-    --checkpoint ./checkpoints/ \
+    --checkpoint ./checkpoints/Monash_prob/ \
     --model_id Eval_tempodata_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent_mo'_%' \
     --electri_multiplier $electri_multiplier \
     --traffic_multiplier $traffic_multiplier \
@@ -75,7 +75,8 @@ torchrun --nproc_per_node=4 --master_port=29521  train_TEMPO_parallel.py \
     --tmax $tmax \
     --cos 1 \
     --is_gpt 1 \
-    --percent_mo $percent_mo >> logs/Eval_tempodata_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent_mo'_%'.log
+    --percent_mo $percent_mo \
+    --loss_func 'prob' >> logs/Prob_Eval_tempodata_Monash_TEMPO'_'$gpt_layer'_'prompt_learn'_'$seq_len'_'$pred_len'_'$percent_mo'_%'.log
 
 
 done

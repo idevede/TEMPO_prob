@@ -352,11 +352,11 @@ def vali(model, vali_data, vali_loader, criterion, args, device, itr):
                 batch_y_mark = batch_y_mark.float().to(device)
             else:
                 # import pdb; pdb.set_trace()
-                batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1)).transpose(0, 1)
-                batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1)).transpose(0, 1)
-                seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1)).transpose(0, 1)
-                seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1)).transpose(0, 1)
-                seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1)).transpose(0, 1)
+                batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1))#.transpose(0, 1)
+                batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1))#.transpose(0, 1)
+                seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1))#.transpose(0, 1)
+                seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1))#.transpose(0, 1)
+                seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1))#.transpose(0, 1)
                     
             # batch_x, batch_y, batch_x_mark, batch_y_mark = data[0], data[1], data[2], data[3]
             batch_x = batch_x.float().to(device)
@@ -451,11 +451,11 @@ def test(model, test_data, test_loader, args, device, itr):
                 batch_y_mark = batch_y_mark.float().to(device)
             else:
                 # import pdb; pdb.set_trace()
-                batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1)).transpose(0, 1)
-                batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1)).transpose(0, 1)
-                seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1)).transpose(0, 1)
-                seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1)).transpose(0, 1)
-                seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1)).transpose(0, 1)
+                batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1))#.transpose(0, 1)
+                batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1))#.transpose(0, 1)
+                seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1))#.transpose(0, 1)
+                seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1))#.transpose(0, 1)
+                seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1))#.transpose(0, 1)
                     
             # outputs_np = batch_x.cpu().numpy()
             # np.save("emb_test/ETTh2_192_test_input_itr{}_{}.npy".format(itr, i), outputs_np)

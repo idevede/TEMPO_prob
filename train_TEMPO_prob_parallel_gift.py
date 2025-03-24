@@ -1,5 +1,5 @@
 from tempo.data_provider.data_factory import data_provider
-from tempo.utils.tools import EarlyStopping, adjust_learning_rate, visual, vali, test, EarlyStopping_dist
+from tempo.utils.tools import EarlyStopping, adjust_learning_rate, visual, vali, test, EarlyStopping_dist, test_probs
 from torch.utils.data import Subset
 from tqdm import tqdm
 from tempo.models.PatchTST import PatchTST
@@ -30,6 +30,7 @@ import sys
 from omegaconf import OmegaConf
 from torch.utils.data import IterableDataset, DataLoader
 
+# import torch.distributed as dist
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
@@ -292,10 +293,28 @@ SEASONALITY_MAP = {
 # else:
 #     rank = 0
 
+
+def print_batch_info(batch_x, batch_y, seq_trend, seq_seasonal, seq_resid, epoch, batch_idx):
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    
+    if batch_idx == 0:  # 只打印每个 epoch 的第一个 batch
+        print(f"Rank {rank}/{world_size}, Epoch {epoch}:")
+        print(f"- batch_x shape: {batch_x.shape}")
+        print(f"- batch_y shape: {batch_y.shape}")
+        print(f"- seq_trend shape: {seq_trend.shape}")
+        print(f"- seq_seasonal shape: {seq_seasonal.shape}")
+        print(f"- seq_resid shape: {seq_resid.shape}")
+        # 打印一些数据样本的特征值，用于验证不同 GPU 的数据是否不同
+        print(f"- batch_x first value: {batch_x[0][0][0].item():.4f}")
+        print(f"- batch_y first value: {batch_y.mean().item():.4f}")
+
+
 def main(args, config):
     assert torch.cuda.is_available(), "Training currently requires at least one GPU."
 
     # Setup DDP:
+    import torch.distributed as dist
     dist.init_process_group(backend='nccl')
     assert args.batch_size % dist.get_world_size() == 0, f"Batch size must be divisible by world size."
     rank = dist.get_rank()
@@ -342,22 +361,17 @@ def main(args, config):
             model = GPT4TS(args, device)
         # mse, mae = test(model, test_data, test_loader, args, device, ii)
         model.to(device)
-
-        # try:
-        #     # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
-        #     # last_path = 'checkpoints/Less_0.01_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
-        #     last_path = 'checkpoints/Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
-        #     # /home/defucao/workspace/TEMPO/checkpoints/Ecl_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/checkpoint.pth
-        #     # last_path = 'checkpoints/Ecl_H_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
-        #     best_model_path = os.path.join(last_path, 'checkpoint.pth')
-        #     model.load_state_dict(torch.load(best_model_path), strict=False)
-        #     print('Pretrain model loaded successfully!')
-        # except:
-        #     print('No pretrain model, train from scratch!')
-
+        try:
+            # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            # last_path = 'checkpoints/Con2_Monash_TEMPO_6_prompt_learn_336_96_100/Con2_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            # best_model_path = os.path.join(last_path, 'checkpoint.pth')
+            model.load_state_dict(torch.load(best_model_path), strict=False)
+            print('Pretrain model loaded successfully!')
+        except:
+            print('No pretrain model, train from scratch!')
         model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
         params = model.parameters()
-        # print('Model loaded successfully!')
+        print('Model loaded successfully!')
         # Load the data
         train_data, train_loader, test_data, test_loader, vali_data, vali_loader, train_sampler, val_sampler = prepare_data_loaders(args, config, rank, world_size)
         print("Data loaded successfully!")
@@ -397,6 +411,36 @@ def main(args, config):
                 def forward(self, pred, true):
                     return torch.mean(200 * torch.abs(pred - true) / (torch.abs(pred) + torch.abs(true) + 1e-8))
             criterion = SMAPE()
+        elif args.loss_func == 'prob':
+            import torch.distributions as dist
+            def criterion(y_true, y_pred):
+                y_true = y_true.squeeze()
+                mu, sigma, nu = y_pred[0], y_pred[1], y_pred[2]
+                # Create the Student's t-distribution
+                nu = torch.abs(nu) + 1e-6
+                sigma = torch.abs(sigma) + 1e-6
+                mu = mu
+                student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
+                # Calculate the negative log-likelihood
+                nll = -student_t.log_prob(y_true)
+                return nll.mean()
+        elif args.loss_func == 'negative_binomial':
+            import torch.distributions as dist
+            def criterion(target, y_pred):
+                # Compute negative log-likelihood of Negative Binomial distribution
+                mu, alpha = y_pred[0], y_pred[1]
+                if len(target.shape)!=3:
+                    target = target.unsqueeze(2)
+                log_gamma_x_plus_n = torch.lgamma(target + 1.0 / alpha)
+                log_gamma_x = torch.lgamma(target + 1)
+                log_gamma_n = torch.lgamma(1.0 / alpha)
+                
+                log_prob = log_gamma_x_plus_n - log_gamma_x - log_gamma_n \
+                        - (target + 1.0 / alpha) * torch.log1p(alpha * mu) \
+                        + target * torch.log(alpha * mu) - target * torch.log1p(alpha * mu)
+                
+                return -log_prob.mean()
+        
         
         scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
 
@@ -431,10 +475,12 @@ def main(args, config):
                 #     adjust_learning_rate(model_optim, epoch, i, num_batches)
 
                 # adjust_learning_rate(model_optim, epoch, i, len(train_loader))
+
+                print_batch_info(batch_x, batch_y, seq_trend, seq_seasonal, seq_resid, epoch, i)
+
                 
                 iter_count += 1
                 model_optim.zero_grad()
-                # import pdb; pdb.set_trace()
                 batch_x = batch_x.float().to(device)
                 # import pdb; pdb.set_trace()
                 batch_y = batch_y.float().to(device)[:,:args.pred_len,:]
@@ -455,9 +501,16 @@ def main(args, config):
                     outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
                 else:
                     outputs = model(batch_x, ii)
-                outputs = outputs[:, -args.pred_len:, :]
-                batch_y = batch_y[:, -args.pred_len:, :].to(device)
-                loss = criterion(outputs, batch_y) 
+
+                if args.loss_func == 'prob' or args.loss_func == 'negative_binomial':
+                # outputs = outputs[:, -args.pred_len:, :]
+                    batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
+                    loss = criterion(batch_y, outputs)
+                else:
+                    outputs = outputs[:, -args.pred_len:, :]
+                    batch_y = batch_y[:, -args.pred_len:, :].to(device)
+                    loss = criterion(outputs, batch_y) 
+               
                 if args.model == 'GPT4TS_multi' or args.model == 'TEMPO_t5':
                     if not args.no_stl_loss:
                         loss += args.stl_weight*loss_local
@@ -472,8 +525,6 @@ def main(args, config):
                     time_now = time.time()
                 loss.backward()
                 model_optim.step()
-
-                # break
             
             
             print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
@@ -498,7 +549,7 @@ def main(args, config):
         best_model_path = path + '/' + 'checkpoint.pth'
         model.load_state_dict(torch.load(best_model_path), strict=False)
         print("------------------------------------")
-        mse, mae = test(model, test_data, test_loader, args, device, ii)
+        mse, mae = test_probs(model, test_data, test_loader, args, device, ii)
         torch.cuda.empty_cache()
         print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))
         
@@ -551,7 +602,7 @@ if __name__ == '__main__':
     parser.add_argument('--loss_func', type=str, default='mse')
     parser.add_argument('--pretrain', type=int, default=1)
     parser.add_argument('--freeze', type=int, default=1)
-    parser.add_argument('--model', type=str, default='TEMPO')
+    parser.add_argument('--model', type=str, default='TEMPO_prob')
     parser.add_argument('--stride', type=int, default=8)
     parser.add_argument('--max_len', type=int, default=-1)
     parser.add_argument('--hid_dim', type=int, default=16)

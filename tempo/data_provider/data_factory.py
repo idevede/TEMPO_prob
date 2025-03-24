@@ -2,6 +2,7 @@ from tempo.data_provider.data_loader import Dataset_Custom, Dataset_Pred, Datase
 from tempo.data_provider.data_loader_monash import Dataset_Monash
 from torch.utils.data import DataLoader
 from tempo.data_provider.data_loader_monash_stream import StreamingMonashDataset
+from datasets import load_dataset, interleave_datasets
 
 data_dict = {
     'custom': Dataset_Custom,
@@ -48,54 +49,72 @@ def data_provider(args, flag, drop_last_test=True, train_all=False):
          # 定义数据目录
         # root_dirs = get_dataset_dirs("./dataset/chronos_ready")
         # root_dirs = get_dataset_dirs("./dataset/chronos_arrow")
-        root_dirs = get_dataset_dirs("./dataset/gift_eval_arrow")
+        # root_dirs = get_dataset_dirs("./dataset/gift_eval_arrow")
+        # root_dirs = get_dataset_dirs("./dataset/chronos_0.01_together/arrow_files")
 
-    
-        data_set = Data(
-            root_dirs=root_dirs,
-            batch_size=args.batch_size,
-            buffer_size=10000,
-            seed=42,
-            verbose=True,
-            # num_workers=4,  # 调整为CPU核心数
-            # cache_dir='./cache',  # 添加缓存
-            # prefetch_factor=2
-        )
-        # from datasets import load_dataset
-        # data_set = load_dataset(
-        #     "arrow",
-        #     data_dir='dataset/chronos_arrow/m4_weekly/arrow_files', 
-        #     # data_dir='dataset/chronos_arrow/m4_yearly/arrow_files', 
-        #     split="train",
-        #     streaming=True
+
+        # data_set = Data(
+        #     root_dirs=root_dirs,
+        #     batch_size=args.batch_size,
+        #     buffer_size=10000,
+        #     seed=42,
+        #     verbose=True,
         # )
+
+        # data_set = load_dataset(
+        #             "arrow",
+        #             data_dir=str(Path('./dataset/chronos_0.2_together/arrow_files')),
+        #             # data_dir=str(Path('./dataset/chronos_0.01_together/arrow_files')),
+        #             # data_dir=str(Path('./dataset/gift_eval_arrow_together/arrow_files')),
+        #             split='train',
+        #             # streaming=True
+        #             streaming=False
+        #         ).with_format("torch")
+
+        print(f"加载数据集: {args.data_path}")
+        if flag == 'train':
+            data_set = load_dataset(
+                        "arrow",
+                        # data_dir=str(Path('./dataset/chronos_0.1_together/arrow_files')),
+                        # data_dir=str(Path('./dataset/chronos_0.2_together/arrow_files')),
+                        # data_dir=str(Path('./dataset/gift_eval_big_arrow_together/arrow_files')),
+                        # data_dir=str(Path('./dataset/finetune_gift_eval/arrow_files')),
+                        # data_dir=str(Path('./dataset/gift_eval_more_arrow/temperature_rain_with_missing')),
+                        # data_dir=str(Path('./dataset/gift_eval_more_arrow/electricity/H')),
+                        # data_dir=str(Path('./dataset/gift_eval_more_arrow/electricity/15T')),
+                        # gift_eval_skip_48_together
+                        data_dir=str(Path('./dataset/gift_eval_skip_48_together/arrow_files')),
+
+                        
+                        split='train',
+                        # streaming=True
+                        streaming=False
+                    ).with_format("torch")
+            num_samples = len(data_set)
+            print(f"数据集中的样本数量: {num_samples}")
+            # import pdb; pdb.set_trace()
+        else:
+            data_set = load_dataset(
+                        "arrow",
+                        # data_dir=str(Path('./dataset/chronos_0.1_together/arrow_files')),
+                        # data_dir=str(Path('./dataset/chronos_0.01_together/arrow_files')),
+                        data_dir=str(Path('./dataset/finetune_gift_eval/arrow_files')),
+
+                        split='train',
+                        # streaming=True
+                        streaming=False
+                    ).with_format("torch")
+    
+        
 
         data_loader = DataLoader(
             data_set,
             batch_size=args.batch_size,
-            shuffle=False,
-            # collate_fn=collate_fn,
+            # shuffle=False,
+            shuffle=True,
             num_workers=4
         )
 
-    
-
-        # from tqdm import tqdm
-        # for batch in tqdm(data_loader):
-
-
-
-
-        # data_loader = DataLoader(
-        #     data_set,
-        #     batch_size=None,  # batch在dataset中已处理
-        #     shuffle=False,    # 不需要shuffle
-        #     num_workers=args.num_workers,
-        #     # prefetch_factor=args.prefetch_factor
-        #     # prefetch_factor=None,  # 预加载的batch数
-        #     pin_memory=True,  # 使用固定内存，加快GPU传输
-        #     # drop_last=True,  # 丢弃不完整的批次
-        # )
         return data_set, data_loader
     
     else:

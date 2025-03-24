@@ -91,9 +91,9 @@ period_map = {
 
 all_names = [
     #  'electricity/15T',
-    # 'electricity/H',
-    # 'electricity/D',
-    'covid_deaths',
+    'electricity/H',
+    'electricity/D',
+    # 'covid_deaths',
     # 'electricity/W': 52
 ]
 # all_names = period_map.keys()
@@ -130,7 +130,9 @@ def create_sliding_windows(dataset_name, ds, window_size=432, x_size=336, y_size
     windows_dict = {}
     for entry in ds:
         
+        # import pdb; pdb.set_trace()
         data_id = entry['item_id']
+    
         if 'target' in entry:
             targets = np.array(entry['target'])
             if len(targets.shape) > 1:
@@ -138,12 +140,11 @@ def create_sliding_windows(dataset_name, ds, window_size=432, x_size=336, y_size
                 for i in range(targets.shape[0]):
                     target = targets[i]
                     if len(target) < window_size:
-                        if len(targets) < 2*y_size:
-                            print(f"Skipping data_id: {data_id} due to insufficient data with length: {len(targets)}")
-                            continue
+                        print(f"Skipping data_id: {data_id} due to insufficient data with length: {len(target)}")
+                        # continue
                         padding_length = window_size - len(target)
                         # 在目标序列末尾补充0
-                        padded_target = np.pad(target, (padding_length, 0), 'constant', constant_values=0)
+                        padded_target = np.pad(target, (0, padding_length), 'constant', constant_values=0)
                         # 将填充后的目标更新回原数组
                         targets[i] = padded_target
                         print(f"Padding target with {padding_length} zeros for data_id: {data_id}")
@@ -156,22 +157,23 @@ def create_sliding_windows(dataset_name, ds, window_size=432, x_size=336, y_size
                     # 进行z-score标准化
                     z_scores = (target - mean) / std
                     if np.isnan(z_scores).any():
-                        print(f"Skip: NaN values in z_scores for data_id: {data_id}")
+                        print(f"NaN values in z_scores for data_id: {data_id}")
                         print(f"targets: {target}")
                         continue
+                    # print(f"z_scores: {z_scores}")
                     target = z_scores
                     trend, seasonal, resid = perform_stl_decomposition(target, dataset_name)
                     windows_list = []
-                    for k in range(0, len(target) - window_size + 1):
-                        window_target = target[k:k + window_size]
+                    for i in range(0, len(target) - window_size + 1):
+                        window_target = target[i:i + window_size]
                         x = {'target': window_target[:x_size]}
                         y = {'target': window_target[x_size:]}
-                        x_trend = trend[k:k + x_size]
-                        x_seasonal = seasonal[k:k + x_size]
-                        x_resid = resid[k:k + x_size]
-                        y_trend = trend[k + x_size:k + window_size]
-                        y_seasonal = seasonal[k + x_size:k + window_size]
-                        y_resid = resid[k + x_size:k + window_size]
+                        x_trend = trend[i:i + x_size]
+                        x_seasonal = seasonal[i:i + x_size]
+                        x_resid = resid[i:i + x_size]
+                        y_trend = trend[i + x_size:i + window_size]
+                        y_seasonal = seasonal[i + x_size:i + window_size]
+                        y_resid = resid[i + x_size:i + window_size]
                         windows_list.append({
                             'x': x, 'y': y,
                             'x_trend': x_trend, 'x_seasonal': x_seasonal, 'x_resid': x_resid,
@@ -184,7 +186,7 @@ def create_sliding_windows(dataset_name, ds, window_size=432, x_size=336, y_size
                         print(f"Skipping data_id: {data_id} due to missing target")
                         continue
             else:
-            
+                # import pdb; pdb.set_trace()
                 print(f"Processing data_id: {data_id} with length: {len(targets)}")
 
                 if len(targets) < window_size:
@@ -196,7 +198,7 @@ def create_sliding_windows(dataset_name, ds, window_size=432, x_size=336, y_size
                     # continue
                     # continue
                     padding_length = window_size - len(targets)
-                    # 在目标序列开始补充0
+                    # 在目标序列末尾补充0
                     targets = np.pad(targets, (padding_length, 0), 'constant', constant_values=0)
                     #ecl_w
                     # front_padding = 136 #152
@@ -206,6 +208,10 @@ def create_sliding_windows(dataset_name, ds, window_size=432, x_size=336, y_size
                     # front_padding = 297 #152
                     # # 在目标序列后面补充72个0
                     # back_padding = 84 #72
+                    #covid
+                    # front_padding = 154 #152
+                    # # 在目标序列后面补充72个0
+                    # back_padding = 66 #72
                     # targets = np.pad(targets, (front_padding, back_padding), 'constant', constant_values=0)
                     # print()
                     # 将填充后的目标更新回原数组
@@ -260,9 +266,8 @@ def create_sliding_windows(dataset_name, ds, window_size=432, x_size=336, y_size
         else:
             for key in entry.keys():
                 print(f"Key: {key}")
-                
+                targets = np.array(entry[key])
                 try:
-                    targets = np.array(entry[key])
                     if len(targets) < window_size or key == 'timestamp':
                         print(f"Skipping data_id: {data_id}'s {key} due to insufficient data with length: {len(targets)}")
                         continue

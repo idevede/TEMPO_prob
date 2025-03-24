@@ -15,7 +15,7 @@ from datasets.info import DatasetInfo
 from datasets.splits import SplitInfo
 import numpy as np
 
-interval = 10 
+interval = 5 
 
 class MonashDatasetConverter:
     def __init__(self, chunk_size_mb=200):
@@ -288,7 +288,7 @@ def get_file_info(file_path):
     dataset_name = os.path.splitext(filename)[0]
     
     pkl_path = file_path
-    output_dir = f"dataset/chronos_0.1/{dataset_name}/"
+    output_dir = f"dataset/chronos_0.2/{dataset_name}/"
     
     return pkl_path, output_dir, dataset_name
 
@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
    
     # 指定目录
-    directory = "dataset/chronos_2"
+    directory = "dataset/chronos"
 
     # 获取目录下的所有.pkl文件
     pkl_files = [f for f in os.listdir(directory) if f.endswith('.pkl')]

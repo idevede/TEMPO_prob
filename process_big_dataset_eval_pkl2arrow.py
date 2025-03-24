@@ -286,10 +286,13 @@ def get_file_info(file_path):
     # 获取上一级目录名
     parent_dir = os.path.basename(os.path.dirname(file_path))
     # 组合目录名和文件名
-    dataset_name = f"{parent_dir}_{base_name}"
+    if parent_dir == "gift_eval_big":
+        dataset_name = f"{base_name}"
+    else:
+        dataset_name = f"{parent_dir}_{base_name}"
     
     pkl_path = file_path
-    output_dir = f"dataset/gift_eval_arrow/{dataset_name}/"
+    output_dir = f"dataset/gift_eval_big_arrow/{dataset_name}/"
     
     return pkl_path, output_dir, dataset_name
 
@@ -309,7 +312,7 @@ if __name__ == "__main__":
 
    
     # 指定目录
-    directory = "dataset/gift_eval"
+    directory = "dataset/gift_eval_more"
 
     pkl_files = find_pkl_files(directory)
 
@@ -323,7 +326,11 @@ if __name__ == "__main__":
         if DATASET_NAME == "mexico_city_bikes" \
             or DATASET_NAME == "m4_yearly" or DATASET_NAME == "m4_weekly" or DATASET_NAME == "ercot": 
             continue
-        if "m4_hourly" in DATASET_NAME or "m4_daily" in DATASET_NAME:
+        # if "m4_hourly" in DATASET_NAME or "m4_daily" in DATASET_NAME:
+            # continue
+        # if "electricity_W" not in DATASET_NAME:
+        #     continue
+        if "electricity" not in DATASET_NAME:
             continue
         # 转换并准备数据集
         try:

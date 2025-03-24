@@ -6,11 +6,11 @@ import glob
 
 def merge_arrow_files():
     # 创建目标目录
-    target_dir = "dataset/chronos_0.2_together/arrow_files"
+    target_dir = "dataset/gift_eval_arrow_together/arrow_files"
     os.makedirs(target_dir, exist_ok=True)
     
     # 获取所有arrow文件
-    arrow_files = glob.glob("dataset/chronos_0.2/**/arrow_files/*.arrow", recursive=True)
+    arrow_files = glob.glob("dataset/gift_eval_arrow/**/arrow_files/*.arrow", recursive=True)
     
     # 复制arrow文件到目标目录
     for i, src_file in enumerate(arrow_files):
@@ -21,7 +21,7 @@ def merge_arrow_files():
 
     # 获取所有dataset_info文件并合并num_samples
     total_samples = 0
-    dataset_info_files = glob.glob("dataset/chronos_0.2/**/dataset_files/dataset_info.json", recursive=True)
+    dataset_info_files = glob.glob("dataset/gift_eval_arrow/**/dataset_files/dataset_info.json", recursive=True)
     
     for info_file in dataset_info_files:
         with open(info_file, 'r') as f:
@@ -30,7 +30,7 @@ def merge_arrow_files():
                 total_samples += info['num_sample']
                 print(f"Found {info['num_sample']} samples in {info_file}")
     
-    target_dir = "dataset/chronos_0.2_together/dataset_files"
+    target_dir = "dataset/gift_eval_arrow_together/dataset_files"
     os.makedirs(target_dir, exist_ok=True)
     # 创建新的dataset_info文件
     new_info = {
