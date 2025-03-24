@@ -230,8 +230,13 @@ class Dataset_GIFT(Dataset):
                 if not isinstance(target, np.ndarray):
                     target = np.array(target)
                 if np.isnan(target).any():
-                    print(f"Warning: NAN detected in target in item {item_id}, skipping")
+                    # print(f"Warning: NAN detected in target in item {item_id}, skipping")
                     # target = fill_nan_with_mean(target)
+                    nan_ratio = np.isnan(target).mean()
+                    if nan_ratio > 0.2:
+                        print(f"Warning: NAN ratio {nan_ratio} too high in item {item_id}, skipping")
+                        continue
+
                     mean_val = np.nanmean(target) if not np.isnan(np.nanmean(target)) else 0
                     np.where(np.isnan(target), mean_val, target)
                     # continue
@@ -326,7 +331,11 @@ class Dataset_GIFT(Dataset):
                     tar = target[j]
                     # if NAN
                     if np.isnan(tar).any():
-                        print(f"Warning: NAN detected in target {j} in item {item_id}, skipping")
+                        # print(f"Warning: NAN detected in target {j} in item {item_id}, skipping")
+                        nan_ratio = np.isnan(tar).mean()
+                        if nan_ratio > 0.2:
+                            print(f"Warning: NAN ratio {nan_ratio} too high in item {item_id}, skipping")
+                            continue
                         mean_val = np.nanmean(tar) if not np.isnan(np.nanmean(tar)) else 0
                         np.where(np.isnan(tar), mean_val, tar)
                         # continue
