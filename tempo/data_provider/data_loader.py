@@ -155,6 +155,214 @@ def fill_nan_with_mean(tar):
 class Dataset_GIFT(Dataset):
     def __init__(self, data_name='custom', seq_len=96, label_len=48, pred_len=96, 
                  features='S', target='OT', scale=True, timeenc=0, freq='h',
+                 stl_position='./stl_data/', flag='train', term='short'):
+        """
+        初始化分解数据集
+        Args:
+            data_name: 数据名称，用于STL分解文件存储
+            seq_len: 输入序列长度
+            label_len: 标签长度
+            pred_len: 预测长度
+            features: 特征类型 ('S': 单变量, 'M': 多变量)
+            target: 目标变量名称
+            scale: 是否进行数据标准化
+            timeenc: 时间编码方式
+            freq: 数据频率
+            stl_position: STL分解结果存储位置
+            flag: 数据集类型 ('train', 'test', 'val')
+            term: 项期限 ('short', 'long')
+        """
+        self.data_name = data_name
+        self.term = term
+        self.original_dataset = Dataset_gift(name=self.data_name, term=self.term, to_univariate=False)
+        self.seq_len = seq_len
+        self.label_len = label_len
+        self.pred_len = pred_len
+        self.features = features
+        self.target = target
+        self.scale = scale
+        self.timeenc = timeenc
+        self.freq = freq
+        self.stl_position = stl_position
+        
+        # 根据flag选择相应的数据集
+        if flag == 'train':
+            self.original_dataset = self.original_dataset.training_dataset
+        elif flag == 'test':
+            self.original_dataset = self.original_dataset.test_data
+        else:
+            self.original_dataset = self.original_dataset.validation_dataset
+        
+        # 处理数据
+        self.__process_data__()
+
+    def __process_data__(self):
+        """处理原始数据集，准备数据但不创建滑动窗口"""
+        self.processed_data = []
+        self.scalers = []
+        
+        # 遍历原始数据集
+        for data_entry in self.original_dataset.input:
+            target = data_entry.get('target')
+            item_id = data_entry.get('item_id', None)
+            print(f"Processing item {item_id}, target shape: {target.shape}")
+            
+            try:
+                if not isinstance(target, np.ndarray):
+                    target = np.array(target)
+            except:
+                target = np.array(target)
+            
+            # 处理一维数据
+            if len(target.shape) == 1:
+                self._process_single_series(target, item_id)
+            # 处理多维数据
+            else:
+                for j in range(len(target)):
+                    tar = target[j]
+                    self._process_single_series(tar, f"{item_id}_{j}" if item_id else f"series_{j}")
+            
+        print(f"Processed {len(self.processed_data)} time series")
+
+    def _process_single_series(self, series, series_id):
+        """处理单个时间序列"""
+        # 检查NaN值
+        if np.isnan(series).any():
+            nan_ratio = np.isnan(series).mean()
+            if nan_ratio > 0.4:
+                print(f"Warning: NAN ratio {nan_ratio} too high in item {series_id}, skipping")
+                return
+
+            mean_val = np.nanmean(series) if not np.isnan(np.nanmean(series)) else 0
+            series = np.where(np.isnan(series), mean_val, series)
+        
+        # 创建DataFrame
+        df = pd.DataFrame({
+            'date': pd.date_range(start='2020-01-01', periods=len(series.flatten()), freq=self.freq),
+            'value': series.flatten()
+        })
+        df['value'] = df['value'].fillna(method='ffill')
+        df['value'] = df['value'].fillna(method='bfill')
+        
+        # 标准化
+        scaler = StandardScaler()
+        if self.scale:
+            df['value'] = scaler.fit_transform(df[['value']])
+        
+        # STL分解
+        trend, seasonal, resid = self.stl_resolve(df, series_id or self.data_name)
+        
+        # 确保数据长度足够
+        if len(df) < self.seq_len + self.pred_len:
+            print(f"警告: 序列 {series_id} 长度({len(df)})小于所需的序列长度({self.seq_len + self.pred_len})，将跳过")
+            return
+        
+        # 存储处理后的数据
+        self.processed_data.append({
+            'data': torch.tensor(df['value'].values, dtype=torch.float32),
+            'trend': trend,
+            'seasonal': seasonal,
+            'resid': resid,
+            'series_id': series_id
+        })
+        self.scalers.append(scaler)
+    
+    def stl_resolve(self, series, dataset_name):
+        period = period_map.get(dataset_name, 24)
+        stl = STL(series['value'], period=period)
+        res = stl.fit()
+        trend_stamp = torch.tensor(res.trend.values, dtype=torch.float32).reshape(-1, 1)
+        seasonal_stamp = torch.tensor(res.seasonal.values, dtype=torch.float32).reshape(-1, 1)
+        resid_stamp = torch.tensor(res.resid.values, dtype=torch.float32).reshape(-1, 1)
+        return trend_stamp, seasonal_stamp, resid_stamp
+
+    def __len__(self):
+        """返回数据集中可能的样本总数"""
+        total_samples = 0
+        for series_data in self.processed_data:
+            data_len = len(series_data['data'])
+            # 计算每个时间序列可以生成的滑动窗口数量
+            total_samples += max(0, data_len - self.seq_len - self.pred_len + 1)
+        return total_samples
+    
+    def __getitem__(self, index):
+        """
+        动态生成指定索引的滑动窗口样本
+        """
+        # 找到对应的时间序列和起始位置
+        series_idx = 0
+        start_pos = index
+        
+        while series_idx < len(self.processed_data):
+            data_len = len(self.processed_data[series_idx]['data'])
+            possible_windows = max(0, data_len - self.seq_len - self.pred_len + 1)
+            
+            if start_pos < possible_windows:
+                # 找到了对应的时间序列和位置
+                break
+            
+            # 调整索引并移至下一个时间序列
+            start_pos -= possible_windows
+            series_idx += 1
+        
+        if series_idx >= len(self.processed_data):
+            raise IndexError(f"Index {index} out of range")
+        
+        # 获取时间序列数据
+        series_data = self.processed_data[series_idx]
+        data = series_data['data']
+        trend = series_data['trend']
+        seasonal = series_data['seasonal']
+        resid = series_data['resid']
+        
+        # 创建滑动窗口
+        s_begin = start_pos
+        s_end = s_begin + self.seq_len
+        r_begin = s_end
+        r_end = r_begin + self.pred_len
+        
+        # 准备输入输出序列
+        seq_x = data[s_begin:s_end].reshape(-1, 1)
+        seq_y = data[r_begin:r_end].reshape(-1, 1)
+        
+        # 准备分解后的序列
+        seq_trend = trend[s_begin:s_end]
+        seq_seasonal = seasonal[s_begin:s_end]
+        seq_resid = resid[s_begin:s_end]
+        
+        # 准备时间特征（这里简化为与序列相同）
+        seq_x_mark = seq_x
+        seq_y_mark = seq_y
+        
+        return (
+            seq_x,
+            seq_y,
+            seq_x_mark,
+            seq_y_mark,
+            seq_trend,
+            seq_seasonal,
+            seq_resid
+        )
+    
+    def inverse_transform(self, data, series_index=0):
+        """
+        反向转换标准化的数据
+        Args:
+            data: 需要反向转换的数据
+            series_index: 时间序列索引，默认使用第一个
+        """
+        if 0 <= series_index < len(self.scalers):
+            return self.scalers[series_index].inverse_transform(data)
+        elif self.scalers:
+            return self.scalers[0].inverse_transform(data)
+        else:
+            return data  # 没有标准化器，直接返回数据
+        
+
+'''
+class Dataset_GIFT(Dataset):
+    def __init__(self, data_name='custom', seq_len=96, label_len=48, pred_len=96, 
+                 features='S', target='OT', scale=True, timeenc=0, freq='h',
                  stl_position='./stl_data/', flag='train', term = 'short'):
         """
         初始化分解数据集
@@ -233,7 +441,7 @@ class Dataset_GIFT(Dataset):
                     # print(f"Warning: NAN detected in target in item {item_id}, skipping")
                     # target = fill_nan_with_mean(target)
                     nan_ratio = np.isnan(target).mean()
-                    if nan_ratio > 0.2:
+                    if nan_ratio > 0.4:
                         print(f"Warning: NAN ratio {nan_ratio} too high in item {item_id}, skipping")
                         continue
 
@@ -258,7 +466,7 @@ class Dataset_GIFT(Dataset):
                 
 
                 # 将数据转换为PyTorch张量
-                data_tensor = torch.tensor(normalized_data, dtype=torch.float32)
+                data_tensor = torch.tensor(df['value'], dtype=torch.float32)
 
                 # 使用滑动窗口创建样本
                 total_length = len(data_tensor)
@@ -268,7 +476,8 @@ class Dataset_GIFT(Dataset):
                     print(f"警告: 序列 {item_id} 长度({total_length})小于所需的序列长度({self.seq_len + self.pred_len})，将跳过")
                     continue
                 # 创建滑动窗口样本
-                for i in range(0, total_length - self.seq_len - self.pred_len + 1, self.pred_len):
+                # for i in range(0, total_length - self.seq_len - self.pred_len + 1, self.pred_len):
+                for i in range(0, total_length - self.seq_len - self.pred_len + 1):
                     s_begin = i
                     s_end = s_begin + self.seq_len
                     r_begin = s_end 
@@ -327,7 +536,7 @@ class Dataset_GIFT(Dataset):
                     if np.isnan(tar).any():
                         # print(f"Warning: NAN detected in target {j} in item {item_id}, skipping")
                         nan_ratio = np.isnan(tar).mean()
-                        if nan_ratio > 0.2:
+                        if nan_ratio > 0.4:
                             print(f"Warning: NAN ratio {nan_ratio} too high in item {item_id}, skipping")
                             continue
                         mean_val = np.nanmean(tar) if not np.isnan(np.nanmean(tar)) else 0
@@ -365,7 +574,7 @@ class Dataset_GIFT(Dataset):
                     
 
                     # 将数据转换为PyTorch张量
-                    data_tensor = torch.tensor(normalized_data, dtype=torch.float32)
+                    data_tensor = torch.tensor(df['value'], dtype=torch.float32)
 
                     # 使用滑动窗口创建样本
                     total_length = len(data_tensor)
@@ -375,7 +584,7 @@ class Dataset_GIFT(Dataset):
                         print(f"警告: 序列 {item_id} 长度({total_length})小于所需的序列长度({self.seq_len + self.pred_len})，将跳过")
                         continue
                     # 创建滑动窗口样本
-                    for i in range(0, total_length - self.seq_len - self.pred_len + 1, self.pred_len):
+                    for i in range(0, total_length - self.seq_len - self.pred_len + 1):
                         s_begin = i
                         s_end = s_begin + self.seq_len
                         r_begin = s_end 
@@ -412,7 +621,7 @@ class Dataset_GIFT(Dataset):
             #     break
                 
             # self.data_entries.append(processed_entry)
-            print(f"Processed with {len(self.samples)} samples")
+        print(f"Processed with {len(self.samples)} samples")
 
         
     def stl_resolve(self, series, dataset_name):
@@ -433,8 +642,8 @@ class Dataset_GIFT(Dataset):
         sample = self.samples[index]
         
         return (
-            sample['seq_x'],
-            sample['seq_y'],
+            sample['seq_x'].reshape(-1, 1),
+            sample['seq_y'].reshape(-1, 1),
             sample['seq_x_mark'],
             sample['seq_y_mark'],
             sample['seq_trend'],
@@ -458,7 +667,7 @@ class Dataset_GIFT(Dataset):
                 return self.scalers[0].inverse_transform(data)
             else:
                 return data  # 没有标准化器，直接返回数据
-
+'''
 
 
 

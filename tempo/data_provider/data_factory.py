@@ -4,7 +4,9 @@ from tempo.data_provider.data_loader_monash import Dataset_Monash
 from torch.utils.data import DataLoader
 from tempo.data_provider.data_loader_monash_stream import StreamingMonashDataset
 from datasets import load_dataset, interleave_datasets
-
+import pickle
+import os
+import torch 
 data_dict = {
     'custom': Dataset_Custom,
     'tsf_data': Dataset_TSF,
@@ -72,22 +74,50 @@ def data_provider(args, flag, drop_last_test=True, train_all=False):
         # data_name='custom', seq_len=96, label_len=48, pred_len=96, 
         #         features='S', target='OT', scale=True, timeenc=0, freq='h',
         #         stl_position='./stl_data/', flag='train', term = 'short'
-        data_set = Data(
-            data_name = args.data_name,
-            term=args.root_path,
-            # data_path=args.data_path,
-            flag=flag,
-            seq_len = args.seq_len,
-            label_len = args.label_len,
-            pred_len = args.pred_len,
-            # size=[args.seq_len, args.label_len, args.pred_len],
-            features=args.features,
-            target=args.target,
-            timeenc=0,
-            freq=args.freq,
-            # percent=args.percent,
-            # max_len=args.max_len,
-        )
+
+        # try:
+            # import pdb; pdb.set_trace()
+            # data_set = torch.load(f'./TEMPO_data_loader/{flag}/{args.data_name.replace('/', '_')}_{args.root_path}_{args.seq_len}_{args.pred_len}.pth')
+            # filename = f'{data_name.replace("/", "_")}_{root_path}_{seq_len}_{pred_len}.pkl'
+        filename = f'{args.data_name.replace("/", "_")}_{args.root_path}_{args.seq_len}_{args.pred_len}.pkl'
+            
+        load_path = f'./TEMPO_data_loader/{flag}/{filename}'
+    
+        try:
+            # import pdb; pdb.set_trace()
+
+            with open(load_path, 'rb') as f:
+                data_set = pickle.load(f)
+        except:
+            data_set = Data(
+                data_name = args.data_name,
+                term=args.root_path,
+                flag=flag,
+                seq_len = args.seq_len,
+                label_len = args.label_len,
+                pred_len = args.pred_len,
+                features=args.features,
+                target=args.target,
+                timeenc=0,
+                freq=args.freq,
+            )
+            
+
+            # 确保目录存在
+            save_dir = f'./TEMPO_data_loader/{flag}/'
+            os.makedirs(save_dir, exist_ok=True)
+
+            # 构建文件名，替换'/'为'_'
+            filename = f'{args.data_name.replace("/", "_")}_{args.root_path}_{args.seq_len}_{args.pred_len}.pkl'
+            save_path = os.path.join(save_dir, filename)
+
+            # 保存数据集到 pkl 文件
+            with open(save_path, 'wb') as f:
+                pickle.dump(data_set, f)
+
+            print(f"数据集已保存到: {save_path}")
+            # torch.save(data_set, f'./TEMPO_data_loader/{flag}/{args.data_name.replace('/', '_')}_{args.root_path}_{args.seq_len}_{args.pred_len}.pth')
+       
         data_loader = DataLoader(
             data_set,
             batch_size=args.batch_size,

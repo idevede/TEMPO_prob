@@ -322,7 +322,7 @@ def main(args, config):
                                                                         args.d_ff, args.embed, ii)
         path = os.path.join(args.checkpoints, setting)
         if not os.path.exists(path):
-            os.makedirs(path)
+            os.makedirs(path, exist_ok=True)
 
         # if args.freq == 0:
         #     args.freq = 'h'
@@ -349,17 +349,19 @@ def main(args, config):
         # mse, mae = test(model, test_data, test_loader, args, device, ii)
         model.to(device)
 
-        # try:
-        #     # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
-        #     # last_path = 'checkpoints/Less_0.01_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
-        #     last_path = 'checkpoints/Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
-        #     # /home/defucao/workspace/TEMPO/checkpoints/Ecl_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/checkpoint.pth
-        #     # last_path = 'checkpoints/Ecl_H_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
-        #     best_model_path = os.path.join(last_path, 'checkpoint.pth')
-        #     model.load_state_dict(torch.load(best_model_path), strict=False)
-        #     print('Pretrain model loaded successfully!')
-        # except:
-        #     print('No pretrain model, train from scratch!')
+        try:
+            # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+            # last_path = 'checkpoints/Less_0.01_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
+            # last_path = 'checkpoints/Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
+            # /home/defucao/workspace/TEMPO/checkpoints/Ecl_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/checkpoint.pth
+            # last_path = 'checkpoints/Ecl_H_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
+            best_model_path = path #+ '/' + 'checkpoint.pth'
+            # import pdb; pdb.set_trace()
+            best_model_path = os.path.join(best_model_path, 'checkpoint.pth')
+            model.load_state_dict(torch.load(best_model_path), strict=False)
+            print(f'Pretrain model loaded successfully from {best_model_path}!')
+        except:
+            print('No pretrain model, train from scratch!')
 
         model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
         params = model.parameters()
@@ -500,9 +502,36 @@ def main(args, config):
                 break
         
 
+        # best_model_path = path + '/' + 'checkpoint.pth'
+        
+        # model.load_state_dict(torch.load(best_model_path), strict=False)
+        # import pdb; pdb.set_trace()
+        # print("------------------------------------")
+        # 修改模型加载部分，只在主进程加载然后广播到其他进程
         best_model_path = path + '/' + 'checkpoint.pth'
-        model.load_state_dict(torch.load(best_model_path), strict=False)
-        print("------------------------------------")
+
+        if os.path.exists(best_model_path):
+            # 只在主进程(rank 0)加载模型
+            if rank == 0:
+                print(f"Loading best model from {best_model_path}")
+                try:
+                    state_dict = torch.load(best_model_path, map_location=device)
+                    model.module.load_state_dict(state_dict, strict=False)  # 使用.module访问DDP包装的模型
+                    print("Model loaded successfully!")
+                except Exception as e:
+                    print(f"Error loading model: {e}")
+                    # 如果加载失败，继续训练新模型
+            
+            # 确保所有进程同步
+            torch.distributed.barrier()
+            
+            # 如果需要广播模型参数（通常DDP会自动处理）
+            # for param in model.parameters():
+            #     torch.distributed.broadcast(param.data, src=0)
+        else:
+            if rank == 0:
+                print(f"No checkpoint found at {best_model_path}, starting from scratch")
+
         mse, mae = test(model, test_data, test_loader, args, device, ii)
         torch.cuda.empty_cache()
         print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))

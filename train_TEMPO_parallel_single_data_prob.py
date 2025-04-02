@@ -1,0 +1,649 @@
+from tempo.data_provider.data_factory import data_provider
+from tempo.utils.tools import EarlyStopping, adjust_learning_rate, visual, vali, test, EarlyStopping_dist, test_probs
+from torch.utils.data import Subset
+from tqdm import tqdm
+from tempo.models.PatchTST import PatchTST
+from tempo.models.GPT4TS import GPT4TS
+from tempo.models.DLinear import DLinear
+from tempo.models.TEMPO import TEMPO
+from tempo.models.T5 import T54TS
+from tempo.models.ETSformer import ETSformer
+
+
+import numpy as np
+import torch
+import torch.nn as nn
+from torch import optim
+from numpy.random import choice
+
+import os
+import time
+
+import warnings
+import matplotlib.pyplot as plt
+import numpy as np
+
+import argparse
+import random
+import sys
+
+from omegaconf import OmegaConf
+from torch.utils.data import IterableDataset, DataLoader
+
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+
+from torch.utils.data.distributed import DistributedSampler
+
+
+# def setup(rank, world_size):
+#     dist.init_process_group("nccl", rank=rank, world_size=world_size)
+
+
+# world_size = torch.cuda.device_count()
+
+# # Call this function at the beginning of your script
+# setup(rank, world_size)
+
+def get_init_config(config_path=None):
+    config = OmegaConf.load(config_path)
+    return config
+
+warnings.filterwarnings('ignore')
+
+fix_seed = 2021
+random.seed(fix_seed)
+torch.manual_seed(fix_seed)
+np.random.seed(fix_seed)
+
+
+def subsample_dataset(dataset, percentage):
+    """
+    从数据集中采样指定百分比的数据
+    
+    参数:
+        dataset: 原始数据集
+        percentage: 采样百分比 (0-100)
+    
+    返回:
+        采样后的数据集
+    """
+    if not hasattr(dataset, '__len__'):
+        # 对于IterableDataset，我们可以使用一个过滤器包装器
+        class SubsampledIterableDataset(torch.utils.data.IterableDataset):
+            def __init__(self, dataset, percentage):
+                super().__init__()
+                self.dataset = dataset
+                self.percentage = percentage / 100.0
+            
+            def __iter__(self):
+                for item in self.dataset:
+                    if random.random() < self.percentage:
+                        yield item
+        
+        return SubsampledIterableDataset(dataset, percentage)
+    else:
+        # 对于MapDataset，我们可以使用random.sample进行子采样
+        n = len(dataset)
+        indices = random.sample(range(n), int(n * percentage / 100))
+        return torch.utils.data.Subset(dataset, indices)
+    
+def print_dataset_info(data, loader, name="Dataset"):
+    print(f"\n=== {name} Information ===")
+    print(f"Number of samples: {len(data)}")
+    print(f"Batch size: {loader.batch_size}")
+    print(f"Number of batches: {len(loader)}")
+    
+    
+    for attr in ['features', 'targets', 'shape']:
+        if hasattr(data, attr):
+            print(f"{attr}: {getattr(data, attr)}")
+    
+
+    # for batch in loader:
+    #     if isinstance(batch, (tuple, list)):
+    #         print("\nFirst batch shapes:")
+    #         for i, item in enumerate(batch):
+    #             print(f"Item {i} shape: {item.shape if hasattr(item, 'shape') else 'N/A'}")
+    #     else:
+    #         print(f"\nFirst batch shape: {batch.shape if hasattr(batch, 'shape') else 'N/A'}")
+    #     break
+
+class FilteredStreamingDataset(IterableDataset):
+    def __init__(self, dataset, interval=100):
+        self.dataset = dataset
+        self.interval = interval
+
+    def __iter__(self):
+        for i, item in enumerate(self.dataset):
+            if i % self.interval == 0:
+                yield item
+
+def prepare_data_loaders(args, config, rank =0, world_size=1):
+    """
+    Prepare train, validation and test data loaders.
+    
+    Args:
+        args: Arguments containing dataset configurations
+        config: Configuration dictionary
+    
+    Returns:
+        tuple: (train_data, train_loader, test_data, test_loader, val_data, val_loader)
+    """
+    
+    train_datas = []
+    val_datas = []
+    min_sample_num = sys.maxsize
+    
+    # 收集训练和验证数据集
+    train_datasets = args.datasets.split(',')
+    val_datasets = args.eval_data.split(',')
+    
+    # 处理训练数据集
+    for dataset_name in train_datasets:
+        _update_args_from_config(args, config, dataset_name)
+        train_data, _ = data_provider(args, 'train')
+        
+        # 计算最小样本数
+        if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash']:
+            min_sample_num = min(min_sample_num, len(train_data))
+            
+        # 根据条件调整数据集大小
+        if args.equal == 1:
+            if dataset_name not in ['ETTh1', 'ETTh2', 'ILI', 'exchange', 'monash']:
+                train_data = Subset(train_data, choice(len(train_data), min_sample_num))
+            elif dataset_name == 'electricity' and args.electri_multiplier > 1:
+                train_data = Subset(train_data, choice(len(train_data), 
+                                  int(min_sample_num * args.electri_multiplier)))
+            elif dataset_name == 'traffic' and args.traffic_multiplier > 1:
+                train_data = Subset(train_data, choice(len(train_data),
+                                  int(min_sample_num * args.traffic_multiplier)))
+                
+        train_datas.append(train_data)
+
+    # 处理验证数据集
+    for dataset_name in val_datasets:
+        _update_args_from_config(args, config, dataset_name)
+        val_data, _ = data_provider(args, 'val')
+        val_datas.append(val_data)
+
+    # 合并数据集
+    train_data = _combine_datasets(train_datas) if len(train_datas) > 1 else train_datas[0]
+    val_data = _combine_datasets(val_datas) if len(val_datas) > 1 else val_datas[0]
+    
+    if dataset_name != 'monash':
+    # 创建数据加载器
+        train_sampler = DistributedSampler(train_data, shuffle=True, rank=dist.get_rank())
+        train_loader = torch.utils.data.DataLoader(
+            train_data, 
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            sampler=train_sampler
+        )
+        val_sampler = DistributedSampler(val_data, shuffle=False, rank=dist.get_rank())
+        val_loader = torch.utils.data.DataLoader(
+            val_data,
+            batch_size=args.batch_size,
+            num_workers=args.num_workers,
+            sampler=val_sampler
+        )
+    else:
+        #from datasets import load_dataset, 
+        from accelerate.data_loader import IterableDatasetShard
+#IterableDatasetShard
+        # 使用 IterableDatasetShard 划分数据集
+        # import pdb; pdb.set_trace()
+        # 使用示例 - 取1%数据
+        if args.percent_mo == 1:
+            print(f"使用1%的训练数据")
+            # log.info("Using 1% of the training data")
+            train_data = FilteredStreamingDataset(train_data, interval=100)
+        # 使用示例 - 取5%数据
+        elif args.percent_mo == 5:
+            print(f"使用5%的训练数据")
+            train_data = FilteredStreamingDataset(train_data, interval=20)
+
+            # log.info("Using 5% of the training data")
+        else:
+            print(f"使用{args.percent_mo}%的训练数据")
+            train_data = FilteredStreamingDataset(train_data, interval=int(100/args.percent_mo))
+        print(args.percent_mo)
+        # import pdb; pdb.set_trace()
+        train_data = IterableDatasetShard(train_data, num_processes=int(world_size), process_index=int(rank))
+
+        # 创建 DataLoader
+        train_loader = torch.utils.data.DataLoader(train_data, batch_size=args.batch_size, num_workers=args.num_workers)
+
+        # val_data = val_data.select(range(0, len(val_data), 10))  # 每10个样本取1个
+        # val_data = val_data.filter(lambda x, idx: idx % 100 == 0, with_indices=True)
+        val_data = FilteredStreamingDataset(val_data, interval=1000)
+        val_data    = IterableDatasetShard(val_data, num_processes=int(world_size), process_index=int(rank))
+        val_loader  = torch.utils.data.DataLoader(val_data, batch_size=args.batch_size, num_workers=args.num_workers)
+        # train_loader = torch.utils.data.DataLoader(
+        #     train_data,
+        #     batch_size=None,  # batch在dataset中已处理
+        #     shuffle=False,    # 不需要shuffle
+        #     num_workers=4,    # 使用多个worker
+        #     pin_memory=True,  # 使用固定内存，加快GPU传输
+        # )
+        # val_loader = torch.utils.data.DataLoader(
+        #     val_data,
+        #     batch_size=None,  # batch在dataset中已处理
+        #     shuffle=False,    # 不需要shuffle
+        #     num_workers=4,    # 使用多个worker
+        #     pin_memory=True,  # 使用固定内存，加快GPU传输
+        # )
+    
+    
+    
+    # 准备测试数据
+    _update_args_from_config(args, config, args.target_data)
+    test_data, test_loader = data_provider(args, 'test')
+
+    # 打印数据集信息
+    # print_dataset_info(train_data, train_loader, "Training Dataset")
+    # print_dataset_info(val_data, val_loader, "Validation Dataset")
+    # print_dataset_info(test_data, test_loader, "Test Dataset")
+    
+    if dataset_name == 'monash':
+        return train_data, train_loader, test_data, test_loader, val_data, val_loader, val_data, val_data
+    else:
+        return train_data, train_loader, test_data, test_loader, val_data, val_loader, train_sampler, val_sampler
+
+def _update_args_from_config(args, config, dataset_name):
+    """Update args with dataset specific configurations"""
+    dataset_config = config['datasets'][dataset_name]
+    for key in ['data', 'root_path', 'data_path', 'data_name', 'features',
+                'freq', 'target', 'embed', 'percent', 'lradj']:
+        if key in dataset_config:  # 检查键是否存在
+            setattr(args, key, getattr(dataset_config, key))
+    for key in ['pred_len']:
+        setattr(args, key, getattr(dataset_config, key))
+    
+    if args.freq == 0:
+        args.freq = 'h'
+
+
+def _combine_datasets(datasets):
+    """Combine multiple datasets into one"""
+    combined = datasets[0]
+    for dataset in datasets[1:]:
+        combined = torch.utils.data.ConcatDataset([combined, dataset])
+    return combined
+
+
+
+
+SEASONALITY_MAP = {
+   "minutely": 1440,
+   "10_minutes": 144,
+   "half_hourly": 48,
+   "hourly": 24,
+   "daily": 7,
+   "weekly": 1,
+   "monthly": 12,
+   "quarterly": 4,
+   "yearly": 1
+}
+
+
+
+# torch.cuda.set_device(args.local_rank)
+# device  = torch.device("cuda", args.local_rank)
+# dist.init_process_group(backend='nccl')
+# if dist.is_initialized():
+#     rank = dist.get_rank()
+# else:
+#     rank = 0
+
+
+def print_batch_info(batch_x, batch_y, seq_trend, seq_seasonal, seq_resid, epoch, batch_idx):
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    
+    if batch_idx == 0:  # 只打印每个 epoch 的第一个 batch
+        print(f"Rank {rank}/{world_size}, Epoch {epoch}:")
+        print(f"- batch_x shape: {batch_x.shape}")
+        print(f"- batch_y shape: {batch_y.shape}")
+        print(f"- seq_trend shape: {seq_trend.shape}")
+        print(f"- seq_seasonal shape: {seq_seasonal.shape}")
+        print(f"- seq_resid shape: {seq_resid.shape}")
+        # 打印一些数据样本的特征值，用于验证不同 GPU 的数据是否不同
+        print(f"- batch_x first value: {batch_x[0][0][0].item():.4f}")
+        print(f"- batch_y first value: {batch_y.mean().item():.4f}")
+
+
+def main(args, config):
+    assert torch.cuda.is_available(), "Training currently requires at least one GPU."
+
+    # Setup DDP:
+    import torch.distributed as dist
+    dist.init_process_group(backend='nccl')
+    assert args.batch_size % dist.get_world_size() == 0, f"Batch size must be divisible by world size."
+    rank = dist.get_rank()
+    world_size = dist.get_world_size()
+    device = rank % torch.cuda.device_count()
+    print("rank: ", rank)
+    torch.cuda.set_device(device)
+    print(f"Starting rank={rank}, world_size={dist.get_world_size()}.")
+    mses = []
+    maes = []
+    args.itr = 1
+
+    train_data, train_loader, test_data, test_loader, vali_data, vali_loader, train_sampler, val_sampler = prepare_data_loaders(args, config, rank, world_size)
+
+    print(args)
+    for ii in range(args.itr):
+
+        setting = '{}_sl{}_ll{}_pl{}_dm{}_nh{}_el{}_gl{}_df{}_eb{}_itr{}'.format(args.model_id, 336, args.label_len, args.pred_len,
+                                                                        args.d_model, args.n_heads, args.e_layers, args.gpt_layers, 
+                                                                        args.d_ff, args.embed, ii)
+        path = os.path.join(args.checkpoints, setting)
+        if not os.path.exists(path):
+            os.makedirs(path, exist_ok=True)
+
+        # if args.freq == 0:
+        #     args.freq = 'h'
+        time_now = time.time()
+        
+
+        if args.model == 'PatchTST':
+            model = PatchTST(args, device)
+            model.to(device)
+        elif args.model == 'DLinear':
+            model = DLinear(args, device)
+            model.to(device)
+        elif args.model == 'TEMPO':
+            model = TEMPO(args, device)
+            model.to(device)
+        elif args.model == 'T5':
+            model = T54TS(args, device)
+            model.to(device)
+        elif 'ETSformer' in args.model:
+            model = ETSformer(args, device)
+            model.to(device)
+        else:
+            model = GPT4TS(args, device)
+        # mse, mae = test(model, test_data, test_loader, args, device, ii)
+        model.to(device)
+
+        # try:
+        #     # last_path = 'checkpoints/Monash_1/Con1_Monash_TEMPO_6_prompt_learn_336_96_100_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0'
+        #     # last_path = 'checkpoints/Less_0.01_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
+        #     last_path = 'checkpoints/Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
+        #     # /home/defucao/workspace/TEMPO/checkpoints/Ecl_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/checkpoint.pth
+        #     # last_path = 'checkpoints/Ecl_H_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
+        #     best_model_path = os.path.join(last_path, 'checkpoint.pth')
+        #     model.load_state_dict(torch.load(best_model_path), strict=False)
+        #     print('Pretrain model loaded successfully!')
+        # except:
+        #     print('No pretrain model, train from scratch!')
+
+        model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
+        params = model.parameters()
+        # print('Model loaded successfully!')
+        # Load the data
+        print("Data loaded successfully!")
+        
+        train_steps = 10000 # estimate #len(train_data) #100000 #len(train_loader) #190470 -52696
+
+        # Assuming you have 4 GPUs
+        num_gpus = torch.cuda.device_count()
+        # Calculate new effective batch size and learning rate
+        effective_batch_size = args.batch_size * num_gpus
+        effective_learning_rate = args.learning_rate * num_gpus
+
+        model_optim = torch.optim.Adam(params, lr=effective_learning_rate)
+        # model_optim = torch.optim.Adam(params, lr=args.learning_rate)
+
+        # Implement gradual warmup
+        warmup_factor = 1.0 / 1000
+        warmup_iters = 1000
+
+        def adjust_learning_rate(optimizer, epoch, iteration, num_iter):
+            if epoch < 5:  # Warmup for first 5 epochs
+                alpha = iteration / (num_iter * 5)
+                lr_mult = warmup_factor * (1 - alpha) + alpha
+            else:
+                lr_mult = 1.0
+            
+            for param_group in optimizer.param_groups:
+                param_group['lr'] = effective_learning_rate * lr_mult
+            
+        early_stopping = EarlyStopping_dist(patience=args.patience, verbose=True)
+        if args.loss_func == 'mse':
+            criterion = nn.MSELoss()
+        elif args.loss_func == 'smape':
+            class SMAPE(nn.Module):
+                def __init__(self):
+                    super(SMAPE, self).__init__()
+                def forward(self, pred, true):
+                    return torch.mean(200 * torch.abs(pred - true) / (torch.abs(pred) + torch.abs(true) + 1e-8))
+            criterion = SMAPE()
+        elif args.loss_func == 'prob':
+            import torch.distributions as dist
+            def criterion(y_true, y_pred):
+                y_true = y_true.squeeze()
+                mu, sigma, nu = y_pred[0], y_pred[1], y_pred[2]
+                # Create the Student's t-distribution
+                nu = torch.abs(nu) + 1e-6
+                sigma = torch.abs(sigma) + 1e-6
+                mu = mu
+                student_t = dist.StudentT(df=nu, loc=mu, scale=sigma)
+                # Calculate the negative log-likelihood
+                nll = -student_t.log_prob(y_true)
+                return nll.mean()
+        elif args.loss_func == 'negative_binomial':
+            import torch.distributions as dist
+            def criterion(target, y_pred):
+                # Compute negative log-likelihood of Negative Binomial distribution
+                mu, alpha = y_pred[0], y_pred[1]
+                if len(target.shape)!=3:
+                    target = target.unsqueeze(2)
+                log_gamma_x_plus_n = torch.lgamma(target + 1.0 / alpha)
+                log_gamma_x = torch.lgamma(target + 1)
+                log_gamma_n = torch.lgamma(1.0 / alpha)
+                
+                log_prob = log_gamma_x_plus_n - log_gamma_x - log_gamma_n \
+                        - (target + 1.0 / alpha) * torch.log1p(alpha * mu) \
+                        + target * torch.log(alpha * mu) - target * torch.log1p(alpha * mu)
+                
+                return -log_prob.mean()
+        
+        
+        scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(model_optim, T_max=args.tmax, eta_min=1e-8)
+
+        for epoch in range(args.train_epochs):
+            # train_sampler.set_epoch(epoch)
+
+            iter_count = 0
+            train_loss = []
+            epoch_time = time.time()
+            for i, data in tqdm(enumerate(train_loader)):
+                if len(data) == 7:
+                    (batch_x, batch_y, batch_x_mark, batch_y_mark, seq_trend, seq_seasonal, seq_resid) = data
+                else:
+                    # import pdb; pdb.set_trace()
+                    # batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1)).transpose(0, 1)
+                    # batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1)).transpose(0, 1)
+                    # seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1)).transpose(0, 1)
+                    # seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1)).transpose(0, 1)
+                    # seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1)).transpose(0, 1)
+                    
+                    batch_x = torch.tensor(np.expand_dims(np.array(data['x_target']), axis=-1))#.transpose(0, 1)
+                    batch_y = torch.tensor(np.expand_dims(np.array(data['y_target']), axis=-1))#.transpose(0, 1)
+                    seq_trend = torch.tensor(np.expand_dims(np.array(data['x_trend']), axis=-1))#.transpose(0, 1)
+                    seq_seasonal = torch.tensor(np.expand_dims(np.array(data['x_seasonal']), axis=-1))#.transpose(0, 1)
+                    seq_resid = torch.tensor(np.expand_dims(np.array(data['x_resid']), axis=-1))#.transpose(0, 1)
+                    
+                    # (batch_x, batch_y, seq_trend, seq_seasonal, seq_resid) = data
+                # if epoch == 0 and i == 0:
+                #     num_batches = sum(1 for _ in train_loader)
+                #     print("num_batches: ", num_batches)
+                # else:
+                #     adjust_learning_rate(model_optim, epoch, i, num_batches)
+
+                # adjust_learning_rate(model_optim, epoch, i, len(train_loader))
+
+                print_batch_info(batch_x, batch_y, seq_trend, seq_seasonal, seq_resid, epoch, i)
+
+                
+                iter_count += 1
+                model_optim.zero_grad()
+                # import pdb; pdb.set_trace()
+                batch_x = batch_x.float().to(device)
+                # import pdb; pdb.set_trace()
+                batch_y = batch_y.float().to(device)[:,:args.pred_len,:]
+                if len(data) == 7:
+                    batch_x_mark = batch_x_mark.float().to(device)
+                    batch_y_mark = batch_y_mark.float().to(device)
+
+                seq_trend = seq_trend.float().to(device)
+                seq_seasonal = seq_seasonal.float().to(device)
+                seq_resid = seq_resid.float().to(device)
+
+                # print(seq_seasonal.shape)
+                if args.model == 'TEMPO' or 'multi' in args.model:
+                    outputs, loss_local = model(batch_x, ii, seq_trend, seq_seasonal, seq_resid) #+ model(seq_seasonal, ii) + model(seq_resid, ii)
+                elif 'former' in args.model:
+                    dec_inp = torch.zeros_like(batch_y[:, -args.pred_len:, :]).float()
+                    dec_inp = torch.cat([batch_y[:, :args.label_len, :], dec_inp], dim=1).float().to(device)
+                    outputs = model(batch_x, batch_x_mark, dec_inp, batch_y_mark)
+                else:
+                    outputs = model(batch_x, ii)
+
+                if args.loss_func == 'prob' or args.loss_func == 'negative_binomial':
+                # outputs = outputs[:, -args.pred_len:, :]
+                    batch_y = batch_y[:, -args.pred_len:, :].to(device).squeeze()
+                    loss = criterion(batch_y, outputs)
+                else:
+                    outputs = outputs[:, -args.pred_len:, :]
+                    batch_y = batch_y[:, -args.pred_len:, :].to(device)
+                    loss = criterion(outputs, batch_y) 
+               
+                if args.model == 'GPT4TS_multi' or args.model == 'TEMPO_t5':
+                    if not args.no_stl_loss:
+                        loss += args.stl_weight*loss_local
+                train_loss.append(loss.item())
+
+                if (i + 1) % 1000 == 0:
+                    print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
+                    speed = (time.time() - time_now) / iter_count
+                    left_time = speed * ((args.train_epochs - epoch) * train_steps - i)
+                    print('\tspeed: {:.4f}s/iter; left time: {:.4f}s'.format(speed, left_time))
+                    iter_count = 0
+                    time_now = time.time()
+                loss.backward()
+                model_optim.step()
+
+                # break
+            
+            
+            print("Epoch: {} cost time: {}".format(epoch + 1, time.time() - epoch_time))
+
+            train_loss = np.average(train_loss)
+            vali_loss = vali(model, vali_data, vali_loader, criterion, args, device, ii)
+        
+            print("Epoch: {0}, Steps: {1} | Train Loss: {2:.7f} Vali Loss: {3:.7f}".format(
+                epoch + 1, train_steps, train_loss, vali_loss))
+
+            if args.cos:
+                scheduler.step()
+                print("lr = {:.10f}".format(model_optim.param_groups[0]['lr']))
+            else:
+                adjust_learning_rate(model_optim, epoch + 1, args)
+            early_stopping(vali_loss, model, path, rank)
+            if early_stopping.early_stop:
+                print("Early stopping")
+                break
+        
+
+        best_model_path = path + '/' + 'checkpoint.pth'
+        model.load_state_dict(torch.load(best_model_path), strict=False)
+        print("------------------------------------")
+        mse, mae = test_probs(model, test_data, test_loader, args, device, ii)
+        torch.cuda.empty_cache()
+        print('test on the ' + str(args.target_data) + ' dataset: mse:' + str(mse) + ' mae:' + str(mae))
+        
+        mses.append(mse)
+        maes.append(mae)
+
+
+    print("mse_mean = {:.4f}, mse_std = {:.4f}".format(np.mean(mses), np.std(mses)))
+    print("mae_mean = {:.4f}, mae_std = {:.4f}".format(np.mean(maes), np.std(maes)))
+
+    # Clean up
+    dist.destroy_process_group()
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='TEMPO')
+
+    parser.add_argument('--model_id', type=str, default='weather_GTP4TS_multi-debug')
+    parser.add_argument('--checkpoints', type=str, default='/l/users/defu.cao/checkpoints_multi_dataset/')
+    parser.add_argument('--task_name', type=str, default='long_term_forecast')
+
+
+    parser.add_argument('--prompt', type=int, default=0)
+    parser.add_argument('--num_nodes', type=int, default=1)
+
+
+    parser.add_argument('--seq_len', type=int, default=512)
+    parser.add_argument('--pred_len', type=int, default=96)
+    parser.add_argument('--label_len', type=int, default=48)
+
+    parser.add_argument('--decay_fac', type=float, default=0.9)
+    parser.add_argument('--learning_rate', type=float, default=0.001)
+    parser.add_argument('--batch_size', type=int, default=128)
+    parser.add_argument('--num_workers', type=int, default=0)
+    parser.add_argument('--train_epochs', type=int, default=10)
+    parser.add_argument('--lradj', type=str, default='type3') # for what
+    parser.add_argument('--patience', type=int, default=5)
+
+    parser.add_argument('--gpt_layers', type=int, default=6)
+    parser.add_argument('--is_gpt', type=int, default=1)
+    parser.add_argument('--e_layers', type=int, default=3)
+    parser.add_argument('--d_model', type=int, default=768)
+    parser.add_argument('--n_heads', type=int, default=4)
+    parser.add_argument('--d_ff', type=int, default=768)
+    parser.add_argument('--dropout', type=float, default=0.3)
+    parser.add_argument('--enc_in', type=int, default=7)
+    parser.add_argument('--c_out', type=int, default=7)
+    parser.add_argument('--patch_size', type=int, default=16)
+    parser.add_argument('--kernel_size', type=int, default=25)
+
+    parser.add_argument('--loss_func', type=str, default='mse')
+    parser.add_argument('--pretrain', type=int, default=1)
+    parser.add_argument('--freeze', type=int, default=1)
+    parser.add_argument('--model', type=str, default='TEMPO_prob')
+    parser.add_argument('--stride', type=int, default=8)
+    parser.add_argument('--max_len', type=int, default=-1)
+    parser.add_argument('--hid_dim', type=int, default=16)
+    parser.add_argument('--tmax', type=int, default=10)
+
+    parser.add_argument('--itr', type=int, default=3)
+    parser.add_argument('--cos', type=int, default=0)
+    parser.add_argument('--equal', type=int, default=1, help='1: equal sampling, 0: dont do the equal sampling')
+    parser.add_argument('--pool', action='store_true', help='whether use prompt pool')
+    parser.add_argument('--no_stl_loss', action='store_true', help='whether use prompt pool')
+
+    parser.add_argument('--stl_weight', type=float, default=0.01)
+    parser.add_argument('--config_path', type=str, default='./data_config.yml')
+    parser.add_argument('--datasets', type=str, default='exchange')
+    parser.add_argument('--target_data', type=str, default='ETTm1')
+    #eval_data
+    parser.add_argument('--eval_data', type=str, default='exchange')
+
+    parser.add_argument('--use_token', type=int, default=0)
+    parser.add_argument('--electri_multiplier', type=int, default=1)
+    parser.add_argument('--traffic_multiplier', type=int, default=1)
+    parser.add_argument('--embed', type=str, default='timeF')
+    # args.percent
+    parser.add_argument('--percent_mo', type=float, default=100)
+
+    
+
+    #args = parser.parse_args([])
+    args = parser.parse_args()
+    config = get_init_config(args.config_path)
+
+    main(args, config)

@@ -40,7 +40,7 @@ datasets:
   
   hospital_M_short:
     root_path: short
-    data_name: hospital/M
+    data_name: hospital
     data: gift
     lradj: type4
     features: M
@@ -66,7 +66,7 @@ datasets:
   
   covid_deaths_D_short:
     root_path: short
-    data_name: covid_deaths/D
+    data_name: covid_deaths
     data: gift
     lradj: type4
     features: M
@@ -79,7 +79,7 @@ datasets:
   
   temperature_rain_D_short:
     root_path: short
-    data_name: temperature_rain/D
+    data_name: temperature_rain_with_missing
     data: gift
     lradj: type4
     features: M
@@ -170,7 +170,7 @@ datasets:
   
   m4_weekly_W_short:
     root_path: short
-    data_name: m4_weekly/W
+    data_name: m4_weekly
     data: gift
     lradj: type4
     features: M
@@ -235,7 +235,7 @@ datasets:
   
   kdd_cup_2018_H_short:
     root_path: short
-    data_name: kdd_cup_2018/H
+    data_name: kdd_cup_2018_with_missing//H
     data: gift
     lradj: type4
     features: M
@@ -248,7 +248,7 @@ datasets:
   
   kdd_cup_2018_H_medium:
     root_path: medium
-    data_name: kdd_cup_2018/H
+    data_name: kdd_cup_2018_with_missing//H
     data: gift
     lradj: type4
     features: M
@@ -261,7 +261,7 @@ datasets:
   
   kdd_cup_2018_H_long:
     root_path: long
-    data_name: kdd_cup_2018/H
+    data_name: kdd_cup_2018_with_missing/H
     data: gift
     lradj: type4
     features: M
@@ -274,7 +274,7 @@ datasets:
   
   saugeen_D_short:
     root_path: short
-    data_name: saugeen/D
+    data_name: saugeenday/D
     data: gift
     lradj: type4
     features: M
@@ -287,7 +287,7 @@ datasets:
   
   kdd_cup_2018_D_short:
     root_path: short
-    data_name: kdd_cup_2018/D
+    data_name: kdd_cup_2018_with_missing/D
     data: gift
     lradj: type4
     features: M
@@ -300,7 +300,7 @@ datasets:
   
   m4_hourly_H_short:
     root_path: short
-    data_name: m4_hourly/H
+    data_name: m4_hourly
     data: gift
     lradj: type4
     features: M
@@ -378,7 +378,7 @@ datasets:
   
   m_dense_D_short:
     root_path: short
-    data_name: m_dense/D
+    data_name: M_DENSE/H
     data: gift
     lradj: type4
     features: M
@@ -391,7 +391,7 @@ datasets:
   
   m4_monthly_M_short:
     root_path: short
-    data_name: m4_monthly/M
+    data_name: m4_monthly
     data: gift
     lradj: type4
     features: M
@@ -404,7 +404,7 @@ datasets:
   
   loop_seattle_D_short:
     root_path: short
-    data_name: loop_seattle/D
+    data_name: LOOP_SEATTLE/D
     data: gift
     lradj: type4
     features: M
@@ -417,7 +417,7 @@ datasets:
   
   m_dense_H_short:
     root_path: short
-    data_name: m_dense/H
+    data_name: M_DENSE/H
     data: gift
     lradj: type4
     features: M
@@ -430,7 +430,7 @@ datasets:
   
   m_dense_H_medium:
     root_path: medium
-    data_name: m_dense/H
+    data_name: M_DENSE/H
     data: gift
     lradj: type4
     features: M
@@ -443,7 +443,7 @@ datasets:
   
   m_dense_H_long:
     root_path: long
-    data_name: m_dense/H
+    data_name: M_DENSE/H
     data: gift
     lradj: type4
     features: M
@@ -469,7 +469,7 @@ datasets:
   
   saugeen_W_short:
     root_path: short
-    data_name: saugeen/W
+    data_name: saugeenday/W
     data: gift
     lradj: type4
     features: M
@@ -482,7 +482,7 @@ datasets:
   
   loop_seattle_H_short:
     root_path: short
-    data_name: loop_seattle/H
+    data_name: LOOP_SEATTLE/H
     data: gift
     lradj: type4
     features: M
@@ -495,7 +495,7 @@ datasets:
   
   loop_seattle_H_medium:
     root_path: medium
-    data_name: loop_seattle/H
+    data_name: LOOP_SEATTLE/H
     data: gift
     lradj: type4
     features: M
@@ -508,7 +508,7 @@ datasets:
   
   loop_seattle_H_long:
     root_path: long
-    data_name: loop_seattle/H
+    data_name: LOOP_SEATTLE/H
     data: gift
     lradj: type4
     features: M
@@ -573,7 +573,7 @@ datasets:
   
   restaurant_D_short:
     root_path: short
-    data_name: restaurant/D
+    data_name: restaurant
     data: gift
     lradj: type4
     features: M
@@ -599,7 +599,7 @@ datasets:
   
   m4_yearly_A_short:
     root_path: short
-    data_name: m4_yearly/A
+    data_name: m4_yearly
     data: gift
     lradj: type4
     features: M
@@ -794,7 +794,7 @@ datasets:
   
   m4_daily_D_short:
     root_path: short
-    data_name: m4_daily/D
+    data_name: m4_daily
     data: gift
     lradj: type4
     features: M
@@ -807,7 +807,7 @@ datasets:
   
   sz_taxi_H_short:
     root_path: short
-    data_name: sz_taxi/H
+    data_name: SZ_TAXI/H
     data: gift
     lradj: type4
     features: M
@@ -859,7 +859,7 @@ datasets:
   
   sz_taxi_15T_short:
     root_path: short
-    data_name: sz_taxi/15T
+    data_name: SZ_TAXI/15T
     data: gift
     lradj: type4
     features: M
@@ -872,7 +872,7 @@ datasets:
   
   sz_taxi_15T_medium:
     root_path: medium
-    data_name: sz_taxi/15T
+    data_name: SZ_TAXI/15T
     data: gift
     lradj: type4
     features: M
@@ -885,7 +885,7 @@ datasets:
   
   sz_taxi_15T_long:
     root_path: long
-    data_name: sz_taxi/15T
+    data_name: SZ_TAXI/15T
     data: gift
     lradj: type4
     features: M
@@ -937,7 +937,7 @@ datasets:
   
   car_parts_M_short:
     root_path: short
-    data_name: car_parts/M
+    data_name: car_parts_with_missing
     data: gift
     lradj: type4
     features: M
@@ -1002,7 +1002,7 @@ datasets:
   
   saugeen_M_short:
     root_path: short
-    data_name: saugeen/M
+    data_name: saugeenday/M
     data: gift
     lradj: type4
     features: M
@@ -1067,7 +1067,7 @@ datasets:
   
   m4_quarterly_Q_short:
     root_path: short
-    data_name: m4_quarterly/Q
+    data_name: m4_quarterly
     data: gift
     lradj: type4
     features: M
@@ -1093,7 +1093,7 @@ datasets:
   
   bizitobs_application_10S_short:
     root_path: short
-    data_name: bizitobs_application/10S
+    data_name: bizitobs_application
     data: gift
     lradj: type4
     features: M
@@ -1106,7 +1106,7 @@ datasets:
   
   bizitobs_application_10S_medium:
     root_path: medium
-    data_name: bizitobs_application/10S
+    data_name: bizitobs_application
     data: gift
     lradj: type4
     features: M
@@ -1119,7 +1119,7 @@ datasets:
   
   bizitobs_application_10S_long:
     root_path: long
-    data_name: bizitobs_application/10S
+    data_name: bizitobs_application
     data: gift
     lradj: type4
     features: M
@@ -1132,7 +1132,7 @@ datasets:
   
   bizitobs_service_10S_short:
     root_path: short
-    data_name: bizitobs_service/10S
+    data_name: bizitobs_service
     data: gift
     lradj: type4
     features: M
@@ -1145,7 +1145,7 @@ datasets:
   
   bizitobs_service_10S_medium:
     root_path: medium
-    data_name: bizitobs_service/10S
+    data_name: bizitobs_service
     data: gift
     lradj: type4
     features: M
@@ -1158,7 +1158,7 @@ datasets:
   
   bizitobs_service_10S_long:
     root_path: long
-    data_name: bizitobs_service/10S
+    data_name: bizitobs_service
     data: gift
     lradj: type4
     features: M
@@ -1171,7 +1171,7 @@ datasets:
   
   loop_seattle_5T_short:
     root_path: short
-    data_name: loop_seattle/5T
+    data_name: LOOP_SEATTLE/5T
     data: gift
     lradj: type4
     features: M
@@ -1184,7 +1184,7 @@ datasets:
   
   loop_seattle_5T_medium:
     root_path: medium
-    data_name: loop_seattle/5T
+    data_name: LOOP_SEATTLE/5T
     data: gift
     lradj: type4
     features: M
@@ -1197,7 +1197,7 @@ datasets:
   
   loop_seattle_5T_long:
     root_path: long
-    data_name: loop_seattle/5T
+    data_name: LOOP_SEATTLE/5T
     data: gift
     lradj: type4
     features: M

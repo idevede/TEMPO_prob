@@ -45,3 +45,7 @@ checkpoints
 datasets/*
 datasets
 monash_parallel_continue.sh
+.env
+myenv
+myenv/
+checkpoints_gift/
