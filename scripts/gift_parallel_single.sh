@@ -13,7 +13,9 @@
 #SBATCH --no-requeue
 #SBATCH -t 12:00:00              # To enable the use of up to 8 GPUs          # To enable the use of up to 8 GPUs
 
-source myenv/bin/activate
+# source myenv/bin/activate
+
+export CUDA_VISIBLE_DEVICES=1
 
 seq_len=336
 model=TEMPO 
@@ -37,9 +39,9 @@ do
 for prompt in 1 
 do
 
-echo logs/gift_dec_prob/$data_name'_'$seq_len.log
+echo logs/0401/running/$data_name'_'$seq_len.log
 
-torchrun --nproc_per_node=2 --master_port=29529  train_TEMPO_parallel_single_data.py \
+torchrun --nproc_per_node=1 --master_port=29529  train_TEMPO_parallel_single_data.py \
     --datasets $data_name \
     --eval_data $data_name \
     --target_data $data_name \
@@ -72,7 +74,7 @@ torchrun --nproc_per_node=2 --master_port=29529  train_TEMPO_parallel_single_dat
     --tmax $tmax \
     --cos 1 \
     --is_gpt 1 \
-    --percent_mo $percent_mo >> logs/gift_dec/$data_name'_'$seq_len.log
+    --percent_mo $percent_mo >> logs/0401/running/$data_name'_'$seq_len.log
 
 
 done

@@ -49,3 +49,6 @@ monash_parallel_continue.sh
 myenv
 myenv/
 checkpoints_gift/
+TEMPO_data_loader/
+TEMPO_data_loader/*
+*.pkl

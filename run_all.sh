@@ -1,111 +1,60 @@
 #!/bin/bash
 
+source .env
 # 创建目录（如果不存在）
 mkdir -p scripts/gift_single
 
 # 定义起始端口
 start_port=29620
-
+gpuid=0
 # 定义所有数据集列表
 all_datasets=(
-    "electricity_H_short"
-    "electricity_H_medium"
-    "electricity_H_long"
-    "hospital_M_short"
-    "solar_W_short"
-    "covid_deaths_D_short"
-    "temperature_rain_D_short"
-    "electricity_15T_short"
-    "electricity_15T_medium"
-    "electricity_15T_long"
-    "bizitobs_l2c_5T_short"
-    "bizitobs_l2c_5T_medium"
-    "bizitobs_l2c_5T_long"
-    "m4_weekly_W_short"
-    "ett2_15T_short"
-    "ett2_15T_medium"
-    "ett2_15T_long"
-    "bitbrains_rnd_H_short"
-    "kdd_cup_2018_H_short"
-    "kdd_cup_2018_H_medium"
-    "kdd_cup_2018_H_long"
-    "saugeen_D_short"
-    "kdd_cup_2018_D_short"
-    "m4_hourly_H_short"
-    "solar_10T_short"
-    "solar_10T_medium"
-    "solar_10T_long"
-    "us_births_W_short"
-    "solar_D_short"
-    "m_dense_D_short"
-    "m4_monthly_M_short"
-    "loop_seattle_D_short"
-    "m_dense_H_short"
-    "m_dense_H_medium"
-    "m_dense_H_long"
-    "ett2_D_short"
-    "saugeen_W_short"
-    "loop_seattle_H_short"
-    "loop_seattle_H_medium"
-    "loop_seattle_H_long"
-    "solar_H_short"
-    "solar_H_medium"
-    "solar_H_long"
-    "jena_weather_D_short"
-    "restaurant_D_short"
-    "us_births_M_short"
-    "m4_yearly_A_short"
-    "hierarchical_sales_D_short"
-    "ett2_W_short"
-    "ett2_H_short"
-    "ett2_H_medium"
-    "ett2_H_long"
-    "bitbrains_fast_storage_5T_short"
-    "bitbrains_fast_storage_5T_medium"
-    "bitbrains_fast_storage_5T_long"
-    "bitbrains_fast_storage_H_short"
-    "electricity_D_short"
-    "ett1_H_short"
-    "ett1_H_medium"
-    "ett1_H_long"
-    "ett1_W_short"
-    "m4_daily_D_short"
-    "sz_taxi_H_short"
-    "bitbrains_rnd_5T_short"
-    "bitbrains_rnd_5T_medium"
-    "bitbrains_rnd_5T_long"
-    "sz_taxi_15T_short"
-    "sz_taxi_15T_medium"
-    "sz_taxi_15T_long"
-    "bizitobs_l2c_H_short"
-    "bizitobs_l2c_H_medium"
-    "bizitobs_l2c_H_long"
-    "car_parts_M_short"
-    "ett1_15T_short"
-    "ett1_15T_medium"
-    "ett1_15T_long"
-    "hierarchical_sales_W_short"
-    "saugeen_M_short"
-    "jena_weather_10T_short"
-    "jena_weather_10T_medium"
-    "jena_weather_10T_long"
-    "us_births_D_short"
-    "m4_quarterly_Q_short"
-    "ett1_D_short"
-    "bizitobs_application_10S_short"
-    "bizitobs_application_10S_medium"
-    "bizitobs_application_10S_long"
-    "bizitobs_service_10S_short"
-    "bizitobs_service_10S_medium"
-    "bizitobs_service_10S_long"
-    "loop_seattle_5T_short"
-    "loop_seattle_5T_medium"
-    "loop_seattle_5T_long"
-    "jena_weather_H_short"
-    "jena_weather_H_medium"
-    "jena_weather_H_long"
-    "electricity_W_short"
+loop_seattle_D_short
+solar_W_short
+bitbrains_rnd_5T_short
+bitbrains_rnd_5T_medium
+bitbrains_rnd_5T_long
+restaurant_D_short
+ett2_W_short
+solar_D_short
+electricity_D_short
+us_births_M_short
+electricity_15T_short
+electricity_15T_medium
+electricity_15T_long
+bitbrains_fast_storage_5T_short
+bitbrains_fast_storage_5T_medium
+bitbrains_fast_storage_5T_long
+jena_weather_D_short
+covid_deaths_D_short
+electricity_W_short
+kdd_cup_2018_D_short
+loop_seattle_H_short
+car_parts_M_short
+solar_H_short
+m4_yearly_A_short
+bitbrains_fast_storage_H_short
+loop_seattle_5T_short
+loop_seattle_5T_medium
+loop_seattle_5T_long
+m4_quarterly_Q_short
+ett1_W_short
+kdd_cup_2018_H_short
+jena_weather_10T_short
+jena_weather_10T_medium
+solar_10T_short
+solar_10T_medium
+solar_10T_long
+temperature_rain_D_short
+saugeen_M_short
+electricity_H_short
+electricity_H_medium
+electricity_H_long
+ett2_D_short
+hospital_M_short
+hierarchical_sales_W_short
 )
+
 
 # 定义需要排除的数据集
 exclude_datasets=(
@@ -171,6 +120,8 @@ echo "Total datasets: ${#all_datasets[@]}"
 echo "Excluded datasets: ${#exclude_datasets[@]}"
 echo "Remaining datasets: ${#datasets[@]}"
 
+
+
 # 读取原始脚本
 template=$(cat scripts/gift_parallel_single.sh)
 
@@ -179,6 +130,8 @@ for dataset in "${datasets[@]}"; do
     # 替换数据集名称和端口号
     modified_script="${template//m_dense_D_short/$dataset}"
     modified_script="${modified_script//master_port=29529/master_port=$start_port}"
+    # CUDA_VISIBLE_DEVICES=0
+    modified_script="${modified_script//CUDA_VISIBLE_DEVICES=0/CUDA_VISIBLE_DEVICES=$gpuid}"
     
     # 保存到新文件
     echo "$modified_script" > "scripts/gift_single/${dataset}.sh"
@@ -186,10 +139,18 @@ for dataset in "${datasets[@]}"; do
     # 使新脚本可执行
     chmod +x "scripts/gift_single/${dataset}.sh"
 
-    sbatch "scripts/gift_single/${dataset}.sh"
+    nohup bash "scripts/gift_single/${dataset}.sh" > "logs/0401/logging/${dataset}.log" 2>&1 &
     
     # 递增端口号
     ((start_port++))
+    # 递增 GPU ID 并在达到 8 时重置为 0
+    ((gpuid++))
+    if [ $gpuid -eq 8 ]; then
+        gpuid=0
+    fi
+    if [ $gpuid -eq 6 ]; then
+        gpuid=7
+    fi
     
     echo "Created script for $dataset with port $((start_port-1))"
 done

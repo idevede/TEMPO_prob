@@ -355,13 +355,15 @@ def main(args, config):
             # last_path = 'checkpoints/Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
             # /home/defucao/workspace/TEMPO/checkpoints/Ecl_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/checkpoint.pth
             # last_path = 'checkpoints/Ecl_H_w_Con_Eval_Less_0.2_Monash_TEMPO_6_prompt_learn_336_96_100_%_sl336_ll0_pl96_dm768_nh4_el3_gl6_df768_ebtimeF_itr0/'
-            best_model_path = path #+ '/' + 'checkpoint.pth'
+            path_old_model = '/home/defucao/workspace/gift-eval/tempo_checkpoints/checkpoints_gift'
+            path_old_model = os.path.join(path_old_model, args.model_id)
+            best_model_path = path_old_model #+ '/' + 'checkpoint.pth'
             # import pdb; pdb.set_trace()
             best_model_path = os.path.join(best_model_path, 'checkpoint.pth')
             model.load_state_dict(torch.load(best_model_path), strict=False)
             print(f'Pretrain model loaded successfully from {best_model_path}!')
         except:
-            print('No pretrain model, train from scratch!')
+            print(f'No pretrain model from {best_model_path}, train from scratch!')
 
         model = DDP(model.to(device), device_ids=[rank],find_unused_parameters=True)
         params = model.parameters()
